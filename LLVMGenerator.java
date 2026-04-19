@@ -2,20 +2,30 @@ class LLVMGenerator {
     static String main = "";
     static int tmp = 1;
 
-    static void ifstart() {
-        
+    static void declare(String id, VarType type) {
+        main += String.format("%%%s = alloca %s\n", id, type);
     }
 
-    static void printf(String id) {
-        main += "%" + tmp + " = load i32, i32* %" + id + "\n";
-        tmp++;
-        main += "%" + tmp + " = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @strp, i32 0, i32 0), i32 %" + (tmp - 1) + ")\n"; 
+    static void write(Value v) {
+        String valueToUse = loadIfNeeded(v);
+        main += String.format(
+            "%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([4 x i8], [4 x i8]* @strp, i32 0, i32 0), i32 %s)\n",
+            tmp, valueToUse
+        );
         tmp++;
     }
 
-    static void scanf(String id) {
-        main += "%" + tmp + " = call i32 (i8*, ...) @__isoc99_scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @strs, i32 0, i32 0), i32* %" + id + ")\n";
-        tmp++;
+    static void read(Value v) {
+        if (v.kind() == ValueKind.VARIABLE) {
+            main += String.format(
+                "%%%d = call i32 (i8*, ...) @__isoc99_scanf(i8* getelementptr inbounds ([3 x i8], [3 x i8]* @strs, i32 0, i32 0), i32* %%%s)\n",
+                tmp, v.value()
+            );
+            tmp++;
+        } else {
+            System.err.println("Error: read requires a variable");
+            System.exit(1);
+        }
     }
 
     static String generate() {
@@ -24,7 +34,6 @@ class LLVMGenerator {
         text += "declare i32 @__isoc99_scanf(i8*, ...)\n";
         text += "@strp = constant [4 x i8] c\"%d\\0A\\00\"\n";
         text += "@strs = constant [3 x i8] c\"%d\\00\"\n";
-        // text += header;
         text += "define i32 @main() nounwind {\n";
         text += main;
         text += "ret i32 0 }\n";
@@ -42,35 +51,39 @@ class LLVMGenerator {
     }
 
     private static Value cast(Value v, VarType targetType) {
-        if (v.type == targetType) {
+        if (v.type() == targetType) {
             return v;
         }
         String result = "%" + tmp++;
         if (targetType == VarType.REAL) {
-            main += result + " = sitofp i32 " + v.value + " to float\n";
-            return new Value(VarType.REAL, result);
+            main += result + " = sitofp i32 " + v.value() + " to float\n";
+            return new Value(VarType.REAL, result, ValueKind.REGISTER);
         } else if (targetType == VarType.REALD) {
-            main += result + " = sitofp i32 " + v.value + " to double\n";
-            return new Value(VarType.REALD, result);
+            main += result + " = sitofp i32 " + v.value() + " to double\n";
+            return new Value(VarType.REALD, result, ValueKind.REGISTER);
         }
         return v;
     }
 
     private static Value aritmeticOperation(Value a, Value b, String intOp, String realOp, String realdOp) {
-        VarType type = resolveType(a.type, b.type);
+        VarType type = resolveType(a.type(), b.type());
         String result = "%" + tmp++;
 
         a = cast(a, type);
         b = cast(b, type);
 
+        String aVal = loadIfNeeded(a);
+        String bVal = loadIfNeeded(b);
+
         switch (type) {
-            case INT -> main += result + " = " + intOp + " i32 " + a.value + ", " + b.value + "\n";
-            case REAL -> main += result + " = " + realOp + " float " + a.value + ", " + b.value + "\n";
-            case REALD -> main += result + " = " + realdOp + " double " + a.value + ", " + b.value + "\n";
+            case INT -> main += result + " = " + intOp + " i32 " + aVal + ", " + bVal + "\n";
+            case REAL -> main += result + " = " + realOp + " float " + aVal + ", " + bVal + "\n";
+            case REALD -> main += result + " = " + realdOp + " double " + aVal + ", " + bVal + "\n";
             default -> {
             }
         }
-        return new Value(type, result);
+
+        return new Value(type, result, ValueKind.REGISTER);
     }
 
     static Value add(Value a, Value b) {
@@ -86,9 +99,38 @@ class LLVMGenerator {
     }
 
     static Value div(Value a, Value b) {
-        if ("0".equals(b.value) || "0.0".equals(b.value)) {
+        if ("0".equals(b.value()) || "0.0".equals(b.value())) {
             throw new RuntimeException("Dzielenie przez 0");
         }
         return aritmeticOperation(a, b, "sdiv", "fdiv", "fdiv");
+    }
+
+    static Value neg(Value v) {
+        String result = "%" + tmp++;
+        String valStr = loadIfNeeded(v);
+        main += String.format(
+            "%s = sub %s 0, %s\n",
+            result, v.type(), valStr);
+        return new Value(v.type(), result, ValueKind.REGISTER);
+    }
+
+    static void assign(String id, Value v) {
+        String llvmType = v.type().toString();
+        String valueToStore = loadIfNeeded(v);
+
+        main += String.format(
+            "store %s %s, %s* %%%s\n",
+            llvmType, valueToStore, llvmType, id);
+    }
+
+    private static String loadIfNeeded(Value v) {
+        if (v.kind() == ValueKind.VARIABLE) {
+            String llvmType = v.type().toString();
+            main += String.format(
+                "%%%d = load %s, %s* %%%s\n",
+                tmp, llvmType, llvmType, v.value());
+            return "%" + tmp++;
+        }
+        return v.value();
     }
 }

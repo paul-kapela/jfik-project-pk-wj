@@ -1,38 +1,39 @@
 grammar Projekt;
 
-code: ( expr? NEWLINE )* expr?
+code: ( stat? NEWLINE )* stat?
 ;
 //    | block
 
-primalExpr: primalExpr MULTIPLY unaryExpr
-    | primalExpr DIVIDE unaryExpr
-    | unaryExpr
+stat: READ value        #read
+    | WRITE expr        #write
+    | ID EQUALS expr    #assign
     ;
 
-expr: expr ADD primalExpr
-    | expr SUBTRACT primalExpr
-    | primalExpr
+primalExpr: primalExpr MULTIPLY unaryExpr #mul
+    | primalExpr DIVIDE unaryExpr         #div
+    | unaryExpr                           #primal
     ;
 
-unaryExpr: SUBTRACT unaryExpr
-    | value
+expr: expr ADD primalExpr       #add
+    | expr SUBTRACT primalExpr  #sub
+    | primalExpr                #expr0
     ;
 
-value: ID
-    | INT
-    | REAL
-    | '(' expr ')'
+unaryExpr: SUBTRACT unaryExpr   #neg
+    | value                     #val
     ;
 
-ID: [a-zA-Z][a-zA-Z0-9]*;
-
-INT: [0-9]+;
-
-REAL: [0-9]+ '.' [0-9]+;
+value: ID           #id
+    | INT           #int
+    | REAL          #real
+    | '(' expr ')'  #parentheses
+    ;
 
 READ: 'read';
 
 WRITE: 'write';
+
+EQUALS: '=';
 
 ADD: '+';
 
@@ -41,6 +42,12 @@ SUBTRACT: '-';
 MULTIPLY: '*';
 
 DIVIDE: '/';
+
+ID: [a-zA-Z][a-zA-Z0-9]*;
+
+INT: [0-9]+;
+
+REAL: [0-9]+ '.' [0-9]+;
 
 NEWLINE: '\r'? '\n';
 
