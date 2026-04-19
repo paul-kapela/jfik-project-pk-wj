@@ -67,13 +67,14 @@ class LLVMGenerator {
 
     private static Value aritmeticOperation(Value a, Value b, String intOp, String realOp, String realdOp) {
         VarType type = resolveType(a.type(), b.type());
-        String result = "%" + tmp++;
 
         a = cast(a, type);
         b = cast(b, type);
 
         String aVal = loadIfNeeded(a);
         String bVal = loadIfNeeded(b);
+        
+        String result = "%" + tmp++;
 
         switch (type) {
             case INT -> main += result + " = " + intOp + " i32 " + aVal + ", " + bVal + "\n";

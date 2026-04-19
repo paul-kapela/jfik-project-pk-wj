@@ -4,7 +4,7 @@ code: ( stat? NEWLINE )* stat?
 ;
 //    | block
 
-stat: READ value        #read
+stat: READ expr         #read
     | WRITE expr        #write
     | ID EQUALS expr    #assign
     ;
