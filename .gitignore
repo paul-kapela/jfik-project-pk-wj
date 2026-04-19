@@ -1,1 +1,5 @@
+output
+
 *.class
+*.interp
+*.tokens
