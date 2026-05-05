@@ -58,36 +58,52 @@ public class LLVMActions extends ProjektBaseListener {
 
     @Override
     public void exitRead(ProjektParser.ReadContext ctx) {
-        LLVMGenerator.write(valuesStack.pop());
-    }
-
-    @Override
-    public void exitWrite(ProjektParser.WriteContext ctx) {
         LLVMGenerator.read(valuesStack.pop());
     }
 
     @Override
+    public void exitWrite(ProjektParser.WriteContext ctx) {
+        LLVMGenerator.write(valuesStack.pop());
+    }
+
+    @Override
     public void exitAdd(ProjektParser.AddContext ctx) {
-        valuesStack.push(LLVMGenerator.add(valuesStack.pop(), valuesStack.pop()));
+        Value b = valuesStack.pop();
+        Value a = valuesStack.pop();
+        valuesStack.push(LLVMGenerator.add(a, b));
     }
 
     @Override
     public void exitSub(ProjektParser.SubContext ctx) {
-        valuesStack.push(LLVMGenerator.sub(valuesStack.pop(), valuesStack.pop()));
+        Value b = valuesStack.pop();
+        Value a = valuesStack.pop();
+        valuesStack.push(LLVMGenerator.sub(a, b));
     }
 
     @Override
     public void exitMul(ProjektParser.MulContext ctx) {
-        valuesStack.push(LLVMGenerator.mul(valuesStack.pop(), valuesStack.pop()));
+        Value b = valuesStack.pop();
+        Value a = valuesStack.pop();
+        valuesStack.push(LLVMGenerator.mul(a, b));
     }
 
     @Override
     public void exitDiv(ProjektParser.DivContext ctx) {
-        valuesStack.push(LLVMGenerator.div(valuesStack.pop(), valuesStack.pop()));
+        Value b = valuesStack.pop();
+        Value a = valuesStack.pop();
+        valuesStack.push(LLVMGenerator.div(a, b));
     }
 
     @Override
     public void exitNeg(ProjektParser.NegContext ctx) {
         valuesStack.push(LLVMGenerator.neg(valuesStack.pop()));
+    }
+
+    @Override
+    public void exitString(ProjektParser.StringContext ctx) {
+        String str = ctx.STRING().getText();
+        str = str.substring(1, str.length() - 1);
+        String name = LLVMGenerator.createString(str);
+        valuesStack.push(new Value(VarType.STRING, name, ValueKind.REGISTER));
     }
 }

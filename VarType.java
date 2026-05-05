@@ -1,7 +1,8 @@
 public enum VarType {
     INT("i32"),
     REAL("float"),
-    REALD("double");
+    REALD("double"),
+    STRING("i8*");
 
     public final String llvmName;
 

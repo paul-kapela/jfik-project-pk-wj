@@ -27,6 +27,7 @@ value: ID           #id
     | INT           #int
     | REAL          #real
     | '(' expr ')'  #parentheses
+    | STRING        #string
     ;
 
 READ: 'read';
@@ -48,6 +49,8 @@ ID: [a-zA-Z][a-zA-Z0-9]*;
 INT: [0-9]+;
 
 REAL: [0-9]+ '.' [0-9]+;
+
+STRING: '"'~["\r\n]*'"';
 
 NEWLINE: '\r'? '\n';
 
