@@ -12,18 +12,6 @@ class LLVMGenerator {
         }
     }
 
-        static String loadString(Value v) {
-        if (v.kind() == ValueKind.VARIABLE) {
-            String ptr = "%" + tmp++;
-            main += String.format(
-                "%s = load i8*, i8** %%%s\n",
-                ptr, v.value()
-            );
-            return ptr;
-        }
-        return v.value();
-    }
-
     static void write(Value v) {
         String value;
         String format;
