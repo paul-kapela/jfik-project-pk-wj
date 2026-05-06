@@ -254,9 +254,17 @@ class LLVMGenerator {
         }
         String result = "%" + tmp++;
         String valStr = loadIfNeeded(v);
+
+        String op = "sub";
+        String zero = "0";
+        if (v.type() == VarType.REAL || v.type() == VarType.REALD) {
+            op = "fsub";
+            zero = "0.0";
+        }
+
         main += String.format(
-            "%s = sub %s 0, %s\n",
-            result, v.type(), valStr);
+            "%s = %s %s %s, %s\n",
+            result, op, v.type(), zero, valStr);
         return new Value(v.type(), result, ValueKind.REGISTER);
     }
 
