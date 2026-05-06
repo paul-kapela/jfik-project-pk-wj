@@ -1,3 +1,9 @@
+x = 21
+y = 37
+read x
+write y
+read x * y
+
 x = 5
 write x
 read x
