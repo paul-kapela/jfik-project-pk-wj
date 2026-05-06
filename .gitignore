@@ -2,3 +2,4 @@
 *.interp
 *.tokens
 output/
+test.ll
