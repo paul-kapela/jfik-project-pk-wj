@@ -17,7 +17,42 @@ public class LLVMActions extends ProjektBaseListener {
 
     @Override
     public void exitReal(ProjektParser.RealContext ctx) {
-        valuesStack.push(new Value(VarType.REAL, ctx.REAL().getText()));
+        String text = ctx.REAL().getText();
+        text = text.substring(0, text.length() - 1);
+
+        float value = Float.parseFloat(text);
+
+        if (Float.isInfinite(value) || Float.isNaN(value)) {
+            System.err.println(String.format(
+                "Error line %d: invalid float literal '%s'",
+                ctx.getStart().getLine(),
+                text
+            ));
+            System.exit(1);
+        }
+
+        String llvmFloat = String.format(
+            "%.15e",
+            (double)value
+        );
+
+        valuesStack.push(
+            new Value(VarType.REAL, llvmFloat)
+        );
+    }
+
+    @Override
+    public void exitReald(ProjektParser.RealdContext ctx) {
+        String text = ctx.REALD().getText();
+
+        double value = Double.parseDouble(text);
+
+        if (Double.isInfinite(value) || Double.isNaN(value)) {
+            System.err.println(String.format("Error line %d: invalid double literal '%s'", ctx.getStart().getLine(), text));
+            System.exit(1);
+        }
+
+        valuesStack.push(new Value(VarType.REALD, text));
     }
 
     @Override

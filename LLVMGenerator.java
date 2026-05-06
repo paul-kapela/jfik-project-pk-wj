@@ -42,20 +42,21 @@ class LLVMGenerator {
             }
             case REAL -> {
                 String val = loadIfNeeded(v);
+
                 value = "%" + tmp++;
                 main += String.format(
                     "%s = fpext float %s to double\n",
                     value, val
                 );
-                format = "@strp_float";
+                format = "@strs_float";
                 llvmType = "double";
-                fmLength = 4;
+                fmLength = 7;
             }
             case REALD -> {
                 value = loadIfNeeded(v);
                 format = "@strp_double";
                 llvmType = "double";
-                fmLength = 5;
+                fmLength = 8;
             }
             default -> {
                 throw new RuntimeException("Unsupported type: " + v.type());
@@ -158,8 +159,9 @@ class LLVMGenerator {
         text += "@strs = constant [3 x i8] c\"%d\\00\"\n";
         // REAL
         text += "@strp_float = constant [4 x i8] c\"%f\\0A\\00\"\n";
+        text += "@strs_float = constant [7 x i8] c\"%.7lf\\0A\\00\"\n";
         // REALD
-        text += "@strp_double = constant [5 x i8] c\"%lf\\0A\\00\"\n";
+        text += "@strp_double = constant [8 x i8] c\"%.15lf\\0A\\00\"\n";
         // STRING
         text += "@strps = constant [4 x i8] c\"%s\\0A\\00\"\n";
         text += "@strss = constant [6 x i8] c\"%255s\\00\"\n";

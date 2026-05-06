@@ -26,6 +26,7 @@ unaryExpr: SUBTRACT unaryExpr   #neg
 value: ID           #id
     | INT           #int
     | REAL          #real
+    | REALD         #reald
     | '(' expr ')'  #parentheses
     | STRING        #string
     ;
@@ -48,7 +49,9 @@ ID: [a-zA-Z][a-zA-Z0-9]*;
 
 INT: [0-9]+;
 
-REAL: [0-9]+ '.' [0-9]+;
+REAL: [0-9]+ '.' [0-9]+ 'f';
+
+REALD: [0-9]+ '.' [0-9]+;
 
 STRING: '"'~["\r\n]*'"';
 
