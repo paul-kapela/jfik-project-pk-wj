@@ -4,10 +4,14 @@ code: ( stat? NEWLINE )* stat?
 ;
 //    | block
 
-stat: READ expr         #read
-    | WRITE expr        #write
-    | ID EQUALS expr    #assign
+stat: READ expr          #read
+    | WRITE expr         #write
+    | lvalue EQUALS expr #assign
     ;
+
+lvalue: ID              #idLval
+      | ID '[' expr ']' #indexLval
+      ;
 
 primalExpr: primalExpr MULTIPLY unaryExpr #mul
     | primalExpr DIVIDE unaryExpr         #div
@@ -23,16 +27,33 @@ unaryExpr: SUBTRACT unaryExpr   #neg
     | value                     #val
     ;
 
-value: ID           #id
-    | INT           #int
-    | REAL          #real
-    | '(' expr ')'  #parentheses
-    | STRING        #string
+value: ID                   #id
+     | INT                  #int
+     | REAL                 #real
+     | '(' expr ')'         #parentheses
+     | STRING               #string
+     | ID LBRAC expr RBRAC  #indexRval
+     | arrayLiteral         #arrayLit
+     | arrayInit            #arrayInitVal
+     ;
+
+arrayLiteral: LBRAC (expr (COMMA expr)*)? RBRAC #lit
+     ;
+
+arrayInit: NEW type LBRAC expr RBRAC #init
+     ;
+
+type: 'int' #tInt
+    | 'real' #tReal
+    | 'double' #tDouble
+    | 'string' #tString
     ;
 
 READ: 'read';
 
 WRITE: 'write';
+
+NEW: 'new';
 
 EQUALS: '=';
 
@@ -43,6 +64,12 @@ SUBTRACT: '-';
 MULTIPLY: '*';
 
 DIVIDE: '/';
+
+COMMA: ',';
+
+LBRAC: '[';
+
+RBRAC: ']';
 
 ID: [a-zA-Z][a-zA-Z0-9]*;
 

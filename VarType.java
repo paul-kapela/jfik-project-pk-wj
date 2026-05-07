@@ -10,6 +10,16 @@ public enum VarType {
         this.llvmName = llvmName;
     }
 
+    public static VarType fromString(String s) {
+        return switch (s.toLowerCase()) {
+            case "int" -> INT;
+            case "real" -> REAL;
+            case "double" -> REALD;
+            case "string" -> STRING;
+            default -> throw new IllegalArgumentException("Unknown type: " + s);
+        };
+    }
+
     @Override
     public String toString() {
         return llvmName;

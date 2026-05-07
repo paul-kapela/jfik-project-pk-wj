@@ -1,5 +1,7 @@
 public enum ValueKind {
     LITERAL,
     VARIABLE,
-    REGISTER
+    REGISTER,
+    ARRAY_LITERAL,
+    ARRAY_VARIABLE
 }

@@ -12,10 +12,14 @@ test:
 	java -cp $(ANTLR):output:. Main test.p > test.ll
 	lli test.ll
 
+test-arrays: compile
+	java -cp $(ANTLR):output:. Main test_arrays.p > test_arrays.ll
+	lli test_arrays.ll
+
 parsetree:
 	java -cp $(ANTLR):output:. org.antlr.v4.runtime.misc.TestRig Projekt -gui test.x
 
 clean:
-	rm test.ll
+	rm -f test.ll test_arrays.ll
 	rm *.class
 	rm -rf output
