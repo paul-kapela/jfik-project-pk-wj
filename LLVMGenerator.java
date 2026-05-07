@@ -184,12 +184,21 @@ class LLVMGenerator {
         if (v.type() == targetType) {
             return v;
         }
+
+        String val = loadIfNeeded(v);
         String result = "%" + tmp++;
-        if (targetType == VarType.REAL) {
-            main += result + " = sitofp i32 " + v.value() + " to float\n";
+
+        if (targetType == VarType.REAL && v.type() == VarType.INT) {
+            main += result + " = sitofp i32 " + val + " to float\n";
             return new Value(VarType.REAL, result, ValueKind.REGISTER);
         } else if (targetType == VarType.REALD) {
-            main += result + " = sitofp i32 " + v.value() + " to double\n";
+            if (v.type() == VarType.INT) {
+                main += result + " = sitofp i32 " + val + " to double\n";
+            } else if (v.type() == VarType.REAL) {
+                main += result + " = fpext float " + val + " to double\n";
+            } else {
+                return v;
+            }
             return new Value(VarType.REALD, result, ValueKind.REGISTER);
         }
         return v;
