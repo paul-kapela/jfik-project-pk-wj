@@ -26,11 +26,11 @@ class LLVMGenerator {
         main += String.format("%s = icmp sge i32 %s, %d\n", cmpGreater, idxVal, size);
         main += String.format("%s = or i1 %s, %s\n", result, cmpLess, cmpGreater);
         main += String.format("br i1 %s, label @bounds_error, label %s\n", result, "continue_" + tmp);
-        
+
         // This is a simplified representation. In a real compiler, we'd need to manage basic blocks.
-        // Given the current linear output of LLVMGenerator, we will use a conditional jump 
+        // Given the current linear output of LLVMGenerator, we will use a conditional jump
         // if we had blocks, but since we are just appending to 'main', we need to handle this carefully.
-        // For this specific architecture, I'll implement bounds checking by emitting a 
+        // For this specific architecture, I'll implement bounds checking by emitting a
         // call to a runtime failure function if the condition is met.
     }
 
@@ -38,18 +38,18 @@ class LLVMGenerator {
         String idxVal = loadIfNeeded(index);
         String ptr = "%" + tmp++;
         String result = "%" + tmp++;
-        
+
         // Bounds check: if (idx <<  0 || idx >= size) { abort(); }
-        // Since we have no basic blocks in the current Generator, we'll use a 'branch' pattern 
+        // Since we have no basic blocks in the current Generator, we'll use a 'branch' pattern
         // or just assume the user understands we'll use a helper function.
         // For now, let's implement the GEP and Load.
-        
+
         main += String.format("%s = getelementptr inbounds [%d x %s], [%d x %s]* %%%s, i32 0, i32 %s\n",
                 ptr, size, elementType, size, elementType, id, idxVal);
-        
-        main += String.format("%s = load %s, %s* %s\n", 
+
+        main += String.format("%s = load %s, %s* %s\n",
                 result, elementType, elementType, ptr);
-        
+
         return new Value(elementType, result, ValueKind.REGISTER);
     }
 
@@ -57,11 +57,11 @@ class LLVMGenerator {
         String idxVal = loadIfNeeded(index);
         String valStr = loadIfNeeded(val);
         String ptr = "%" + tmp++;
-        
+
         main += String.format("%s = getelementptr inbounds [%d x %s], [%d x %s]* %%%s, i32 0, i32 %s\n",
                 ptr, size, val.type(), size, val.type(), id, idxVal);
-        
-        main += String.format("store %s %s, %s* %s\n", 
+
+        main += String.format("store %s %s, %s* %s\n",
                 val.type(), valStr, val.type(), ptr);
     }
 
@@ -99,6 +99,7 @@ class LLVMGenerator {
             }
             case REAL -> {
                 String val = loadIfNeeded(v);
+
                 value = "%" + tmp++;
                 main += String.format(
                     "%s = fpext float %s to double\n",
@@ -106,13 +107,13 @@ class LLVMGenerator {
                 );
                 format = "@strp_float";
                 llvmType = "double";
-                fmLength = 4;
+                fmLength = 7;
             }
             case REALD -> {
                 value = loadIfNeeded(v);
                 format = "@strp_double";
                 llvmType = "double";
-                fmLength = 5;
+                fmLength = 8;
             }
             default -> {
                 throw new RuntimeException("Unsupported type: " + v.type());
@@ -169,13 +170,13 @@ class LLVMGenerator {
                 );
                 format = "@strp_float_no_nl";
                 llvmType = "double";
-                fmLength = 3;
+                fmLength = 6;
             }
             case REALD -> {
                 value = loadIfNeeded(v);
                 format = "@strp_double_no_nl";
                 llvmType = "double";
-                fmLength = 4;
+                fmLength = 7;
             }
             default -> {
                 throw new RuntimeException("Unsupported type: " + v.type());
@@ -197,16 +198,16 @@ class LLVMGenerator {
 
     static void writeArray(Value v, int size, VarType type) {
         main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_bracket_open, i32 0, i32 0), i8* null)\n", tmp++);
-        
+
         for (int i = 0; i < size; i++) {
             Value element = loadArrayElement(v.value(), new Value(VarType.INT, String.valueOf(i)), size, type);
             writeNoNewline(element);
-            
+
             if (i < size - 1) {
                 main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_comma, i32 0, i32 0), i8* null)\n", tmp++);
             }
         }
-        
+
         main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_bracket_close, i32 0, i32 0), i8* null)\n", tmp++);
         main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_nl, i32 0, i32 0), i8* null)\n", tmp++);
     }
@@ -294,11 +295,13 @@ class LLVMGenerator {
         text += "@strs = constant [3 x i8] c\"%d\\00\"\n";
         text += "@strp_no_nl = constant [3 x i8] c\"%d\\00\"\n";
         // REAL
-        text += "@strp_float = constant [4 x i8] c\"%f\\0A\\00\"\n";
-        text += "@strp_float_no_nl = constant [3 x i8] c\"%f\\00\"\n";
+        text += "@strp_float = constant [7 x i8] c\"%.7lf\\0A\\00\"\n";
+        text += "@strp_float_no_nl = constant [6 x i8] c\"%.7lf\\00\"\n";
+        text += "@strs_float = constant [3 x i8] c\"%f\\00\"\n";
         // REALD
-        text += "@strp_double = constant [5 x i8] c\"%lf\\0A\\00\"\n";
-        text += "@strp_double_no_nl = constant [4 x i8] c\"%lf\\00\"\n";
+        text += "@strp_double = constant [8 x i8] c\"%.15lf\\0A\\00\"\n";
+        text += "@strp_double_no_nl = constant [7 x i8] c\"%.15lf\\00\"\n";
+        text += "@strs_double = constant [4 x i8] c\"%lf\\00\"\n";
         // STRING
         text += "@strps = constant [4 x i8] c\"%s\\0A\\00\"\n";
         text += "@strps_no_nl = constant [3 x i8] c\"%s\\00\"\n";
@@ -359,7 +362,7 @@ class LLVMGenerator {
 
         String aVal = loadIfNeeded(a);
         String bVal = loadIfNeeded(b);
-        
+
         String result = "%" + tmp++;
 
         switch (type) {

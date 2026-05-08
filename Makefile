@@ -6,7 +6,7 @@ generate:
 	java -jar $(ANTLR) -o output Projekt.g4
 
 compile:
-	javac -cp $(ANTLR):output:. Main.java
+	javac -cp $(ANTLR):output:. *.java
 	
 test:
 	java -cp $(ANTLR):output:. Main test.p > test.ll

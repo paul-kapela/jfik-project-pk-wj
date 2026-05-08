@@ -3,3 +3,4 @@
 *.tokens
 output/
 test.ll
+test_arrays.ll

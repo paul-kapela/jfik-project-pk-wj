@@ -23,8 +23,10 @@ write "a / b"
 write a / b
 
 write "REAL"
-d = 5.0
-e = 3.0
+write 3.125f
+write 8.4f
+d = 5.1f
+e = 3.0f
 f = d + e
 write "a + b"
 write f
@@ -34,6 +36,10 @@ write "a * b"
 write d * e
 write "a / b"
 write d / e
+
+write "REALD"
+write 4889.16548612684684116846
+write 5.0 / 3.0
 
 text1 = "test_text1"
 write text1
