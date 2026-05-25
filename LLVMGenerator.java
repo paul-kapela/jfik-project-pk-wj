@@ -295,12 +295,12 @@ class LLVMGenerator {
         text += "@strs = constant [3 x i8] c\"%d\\00\"\n";
         text += "@strp_no_nl = constant [3 x i8] c\"%d\\00\"\n";
         // REAL
-        text += "@strp_float = constant [7 x i8] c\"%.7lf\\0A\\00\"\n";
+        text += "@strp_float = constant [7 x i8] c\"%.6lf\\0A\\00\"\n";
         text += "@strp_float_no_nl = constant [6 x i8] c\"%.7lf\\00\"\n";
         text += "@strs_float = constant [3 x i8] c\"%f\\00\"\n";
         // REALD
-        text += "@strp_double = constant [8 x i8] c\"%.15lf\\0A\\00\"\n";
-        text += "@strp_double_no_nl = constant [7 x i8] c\"%.15lf\\00\"\n";
+        text += "@strp_double = constant [8 x i8] c\"%.12lf\\0A\\00\"\n";
+        text += "@strp_double_no_nl = constant [7 x i8] c\"%.12lf\\00\"\n";
         text += "@strs_double = constant [4 x i8] c\"%lf\\00\"\n";
         // STRING
         text += "@strps = constant [4 x i8] c\"%s\\0A\\00\"\n";
