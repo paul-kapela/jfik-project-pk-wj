@@ -8,19 +8,56 @@ class LLVMGenerator {
     static int br = 0;
     static int strId = 0;
 
-    static Stack<Integer> brStack = new Stack<Integer>();
-
-    static void ifstart() {
-        br++;
-        main += String.format("br i1 %%%d, label %%true%d, label %%false%d\n", tmp - 1, br, br);
-        main += String.format("true%d:\n", br);
-        brStack.push(br);
+    static class IfFrame {
+        int endLabel;
+        int nextFalseLabel = -1;
     }
 
-    static void ifend() {
-        int b = brStack.pop();
-        main += String.format("br label %%false%d\n", b);
-        main += String.format("false%d:\n", b);
+    static Stack<IfFrame> ifStack = new Stack<>();
+
+    static void ifBegin() {
+        IfFrame frame = new IfFrame();
+        frame.endLabel = br++;
+        ifStack.push(frame);
+    }
+
+    static void ifBranch() {
+        IfFrame frame = ifStack.peek();
+        int trueLabel = br++;
+        int falseLabel = br++;
+
+        frame.nextFalseLabel = falseLabel;
+
+        main += String.format(
+            "br i1 %%%d, label %%L%d, label %%L%d\n",
+            tmp - 1, trueLabel, falseLabel
+        );
+        main += String.format("L%d:\n", trueLabel);
+    }
+
+    static void elseIfNext() {
+        main += String.format("L%d:\n", ifStack.peek().nextFalseLabel);
+    }
+
+    static void elseBegin() {
+        IfFrame frame = ifStack.peek();
+        main += String.format("L%d:\n", frame.nextFalseLabel);
+        frame.nextFalseLabel = -1;
+    }
+
+    static void blockIfEnd() {
+        main += String.format("br label %%L%d\n", ifStack.peek().endLabel);
+    }
+
+    static void ifEnd(boolean hasElse) {
+        IfFrame frame = ifStack.pop();
+
+        if (!hasElse) {
+            main += String.format("L%d:\n", frame.nextFalseLabel);
+            main += String.format("br label %%L%d\n", frame.endLabel);
+        }
+
+        main += String.format("L%d:\n", frame.endLabel);
     }
 
     static void icmp(Value left, Value right, String op) {

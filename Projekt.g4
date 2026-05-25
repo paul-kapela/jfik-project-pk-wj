@@ -1,19 +1,28 @@
 grammar Projekt;
 
 code: block
-;
+    ;
 
 block: ( stat? NEWLINE )* stat?
-;
+    ;
 
-stat: IF cond THEN blockIf ENDIF #if
+stat: IF cond THEN blockIf
+      elseIfClause*
+      elseClause?
+      ENDIF                      #if
     | READ expr                  #read
     | WRITE expr                 #write
     | lvalue EQUALS expr         #assign
     ;
 
 blockIf: block
-;
+    ;
+
+elseIfClause: ELSEIF cond THEN blockIf
+    ;
+
+elseClause: ELSE blockIf
+    ;
 
 lvalue: ID              #idLval
       | ID '[' expr ']' #indexLval
@@ -56,8 +65,8 @@ type: 'int' #tInt
     | 'string' #tString
     ;
 
-cond: expr condOp expr #cond
-;
+cond: expr condOp expr
+    ;
 
 condOp: EQ   #condEq
       | NEQ  #condNeq
@@ -76,6 +85,10 @@ NEW: 'new';
 IF: 'if';
 
 THEN: 'then';
+
+ELSEIF: 'elseif';
+
+ELSE: 'else';
 
 ENDIF: 'endif';
 

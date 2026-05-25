@@ -18,17 +18,35 @@ public class LLVMActions extends ProjektBaseListener {
     }
 
     @Override
+    public void enterIf(ProjektParser.IfContext ctx) {
+        LLVMGenerator.ifBegin();
+    }
+
+    @Override
     public void exitIf(ProjektParser.IfContext ctx) {
+        LLVMGenerator.ifEnd(ctx.elseClause() != null);
     }
 
     @Override
     public void enterBlockIf(ProjektParser.BlockIfContext ctx) {
-        LLVMGenerator.ifstart();
+        if (!(ctx.getParent() instanceof ProjektParser.ElseClauseContext)) {
+            LLVMGenerator.ifBranch();
+        }
     }
 
     @Override
     public void exitBlockIf(ProjektParser.BlockIfContext ctx) {
-        LLVMGenerator.ifend();
+        LLVMGenerator.blockIfEnd();
+    }
+
+    @Override
+    public void enterElseIfClause(ProjektParser.ElseIfClauseContext ctx) {
+        LLVMGenerator.elseIfNext();
+    }
+
+    @Override
+    public void enterElseClause(ProjektParser.ElseClauseContext ctx) {
+        LLVMGenerator.elseBegin();
     }
 
     @Override
