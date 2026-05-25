@@ -1,13 +1,19 @@
 grammar Projekt;
 
-code: ( stat? NEWLINE )* stat?
+code: block
 ;
-//    | block
 
-stat: READ expr          #read
-    | WRITE expr         #write
-    | lvalue EQUALS expr #assign
+block: ( stat? NEWLINE )* stat?
+;
+
+stat: IF cond THEN blockIf ENDIF #if
+    | READ expr                  #read
+    | WRITE expr                 #write
+    | lvalue EQUALS expr         #assign
     ;
+
+blockIf: block
+;
 
 lvalue: ID              #idLval
       | ID '[' expr ']' #indexLval
@@ -50,11 +56,30 @@ type: 'int' #tInt
     | 'string' #tString
     ;
 
+cond: expr condOp expr #cond
+;
+
+condOp: EQ   #condEq
+      | NEQ  #condNeq
+      | LTE  #condLte
+      | GTE  #condGte
+      | LT   #condLt
+      | GT   #condGt
+      ;
+
 READ: 'read';
 
 WRITE: 'write';
 
 NEW: 'new';
+
+IF: 'if';
+
+THEN: 'then';
+
+ENDIF: 'endif';
+
+EQ: '==';
 
 EQUALS: '=';
 
@@ -71,6 +96,16 @@ COMMA: ',';
 LBRAC: '[';
 
 RBRAC: ']';
+
+NEQ: '!=';
+
+LTE: '<=';
+
+GTE: '>=';
+
+LT: '<';
+
+GT: '>';
 
 ID: [a-zA-Z][a-zA-Z0-9]*;
 

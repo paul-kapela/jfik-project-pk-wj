@@ -1,8 +1,76 @@
+import java.util.Stack;
+
 class LLVMGenerator {
-    static String main = "";
-    static int tmp = 1;
     static String header = "";
+    static String main = "";
+
+    static int tmp = 1;
+    static int br = 0;
     static int strId = 0;
+
+    static Stack<Integer> brStack = new Stack<Integer>();
+
+    static void ifstart() {
+        br++;
+        main += String.format("br i1 %%%d, label %%true%d, label %%false%d\n", tmp - 1, br, br);
+        main += String.format("true%d:\n", br);
+        brStack.push(br);
+    }
+
+    static void ifend() {
+        int b = brStack.pop();
+        main += String.format("br label %%false%d\n", b);
+        main += String.format("false%d:\n", b);
+    }
+
+    static void icmp(Value left, Value right, String op) {
+        if (left.type() == VarType.STRING && right.type() == VarType.STRING) {
+            String leftVal = loadIfNeeded(left);
+            String rightVal = loadIfNeeded(right);
+
+            String cmpResult = String.format("%%%d", tmp++);
+
+            main += String.format(
+                "%s = call i32 @strcmp(i8* %s, i8* %s)\n",
+                cmpResult, leftVal, rightVal
+            );
+
+            String result = String.format("%%%d", tmp++);
+
+            main += String.format("%s = icmp %s i32 %s, 0\n", result, op, cmpResult);
+        } else if (left.type() == VarType.STRING || right.type() == VarType.STRING) {
+            System.err.println("Error: cannot compare string with non-string type");
+            System.exit(1);
+        } else {
+            VarType type = resolveType(left.type(), right.type());
+            left = cast(left, type);
+            right = cast(right, type);
+
+            String leftVal = loadIfNeeded(left);
+            String rightVal = loadIfNeeded(right);
+
+            String result = String.format("%%%d", tmp++);
+
+            switch (type) {
+                case INT ->
+                    main += String.format("%s = icmp %s i32 %s, %s\n", result, op, leftVal, rightVal);
+                case REAL ->
+                    main += String.format("%s = fcmp %s float %s, %s\n", result, floatOp(op), leftVal, rightVal);
+                case REALD ->
+                    main += String.format("%s = fcmp %s double %s, %s\n", result, floatOp(op), leftVal, rightVal);
+                default -> { System.err.println("Error: unsupported type for comparison"); System.exit(1); }
+            }
+        }
+    }
+
+    private static String floatOp(String intOp) {
+        return switch (intOp) {
+            case "eq" -> "oeq"; case "ne" -> "one";
+            case "slt" -> "olt"; case "sgt" -> "ogt";
+            case "sle" -> "ole"; case "sge" -> "oge";
+            default -> "oeq";
+        };
+    }
 
     static void declare(String id, VarType type) {
         if (type == VarType.STRING) {
@@ -290,6 +358,7 @@ class LLVMGenerator {
         String text = "";
         text += "declare i32 @printf(i8*, ...)\n";
         text += "declare i32 @__isoc99_scanf(i8*, ...)\n";
+        text += "declare i32 @strcmp(i8*, i8*)\n";
         // INT
         text += "@strp = constant [4 x i8] c\"%d\\0A\\00\"\n";
         text += "@strs = constant [3 x i8] c\"%d\\00\"\n";

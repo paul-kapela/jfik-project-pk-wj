@@ -7,7 +7,7 @@ generate:
 
 compile:
 	javac -cp $(ANTLR):output:. *.java
-	
+
 test:
 	java -cp $(ANTLR):output:. Main test.p > test.ll
 	lli test.ll
@@ -15,6 +15,10 @@ test:
 test-arrays: compile
 	java -cp $(ANTLR):output:. Main test_arrays.p > test_arrays.ll
 	lli test_arrays.ll
+
+test-blocks: compile
+	java -cp $(ANTLR):output:. Main test_blocks.p > test_blocks.ll
+	lli test_blocks.ll
 
 parsetree:
 	java -cp $(ANTLR):output:. org.antlr.v4.runtime.misc.TestRig Projekt -gui test.x
