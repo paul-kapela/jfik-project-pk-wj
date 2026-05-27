@@ -1,12 +1,13 @@
 grammar Projekt;
 
-code: ( stat? NEWLINE )* stat?
+code: ( (stat|functionDef)? NEWLINE )* stat?
 ;
 //    | block
 
 stat: READ expr          #read
     | WRITE expr         #write
     | lvalue EQUALS expr #assign
+    | value              #valueCall 
     ;
 
 lvalue: ID              #idLval
@@ -36,6 +37,7 @@ value: ID                   #id
      | ID LBRAC expr RBRAC  #indexRval
      | arrayLiteral         #arrayLit
      | arrayInit            #arrayInitVal
+     | ID LPAREN argList? RPAREN #functionCall
      ;
 
 arrayLiteral: LBRAC (expr (COMMA expr)*)? RBRAC #lit
@@ -48,6 +50,29 @@ type: 'int' #tInt
     | 'real' #tReal
     | 'double' #tDouble
     | 'string' #tString
+    ;
+
+funType: VOID   #voidType
+        | type  #typedReturn
+        ;
+
+returnStat: RETURN expr
+        |  RETURN
+        ;
+
+param: type ID
+    ;
+
+paramList: param (COMMA param)*
+    ;
+
+argList: expr (COMMA expr)*
+    ;
+
+block: LBRACE NEWLINE (stat NEWLINE*)* returnStat NEWLINE RBRACE
+    ;
+
+functionDef: FUN funType ID LPAREN paramList? RPAREN block
     ;
 
 READ: 'read';
@@ -71,6 +96,20 @@ COMMA: ',';
 LBRAC: '[';
 
 RBRAC: ']';
+
+LBRACE: '{';
+
+RBRACE: '}';
+
+LPAREN: '(';
+
+RPAREN: ')';
+
+VOID: 'void';
+
+FUN: 'fun';
+
+RETURN: 'return';
 
 ID: [a-zA-Z][a-zA-Z0-9]*;
 

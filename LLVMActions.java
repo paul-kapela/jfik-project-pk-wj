@@ -3,14 +3,29 @@ import java.util.Stack;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 public class LLVMActions extends ProjektBaseListener {
     HashMap<String, VariableInfo> variables = new HashMap<>();
+    Map<String, VariableInfo> locals = new HashMap<>();
     Stack<Value> valuesStack = new Stack<>();
     
     // To store elements of array literals temporarily
     HashMap<String, List<Value>> arrayLiterals = new HashMap<>();
     int literalId = 0;
+
+    HashMap<String, VarType> functions = new HashMap<>();
+
+    private VariableInfo getVariableInfo(String id) {
+        boolean isInFunction = LLVMGenerator.isInFunction();
+        if (isInFunction && locals.containsKey(id)) {
+            return locals.get(id);
+        } else if (!isInFunction && variables.containsKey(id)) {
+            return variables.get(id);
+        } else {
+            return null;
+        }
+    }
 
     @Override
     public void exitCode(ProjektParser.CodeContext ctx) {
@@ -66,11 +81,13 @@ public class LLVMActions extends ProjektBaseListener {
     @Override
     public void exitId(ProjektParser.IdContext ctx) {
         String id = ctx.ID().getText();
+        VariableInfo info = getVariableInfo(id);
 
-        if (variables.containsKey(id)) {
-            VariableInfo info = variables.get(id);
+        if (info != null) {
             if (info.isArray()) {
                 valuesStack.push(new Value(info.elementType(), id, ValueKind.ARRAY_VARIABLE));
+            } else if (info.isParameter()) {
+                valuesStack.push(new Value(info.elementType(), id, ValueKind.PARAMETER));
             } else {
                 valuesStack.push(new Value(info.elementType(), id, ValueKind.VARIABLE));
             }
@@ -83,16 +100,18 @@ public class LLVMActions extends ProjektBaseListener {
     @Override
     public void exitAssign(ProjektParser.AssignContext ctx) {
         Value val = valuesStack.pop();
+        boolean isInFunction = LLVMGenerator.isInFunction();
         
         if (ctx.lvalue() instanceof ProjektParser.IdLvalContext idLval) {
             String id = idLval.ID().getText();
-            
-            if (variables.containsKey(id)) {
-                VariableInfo info = variables.get(id);
+            VariableInfo info = getVariableInfo(id);
+
+            if (info != null) {
                 if (info.isArray()) {
                     System.err.println("Error: cannot assign scalar to array variable " + id);
                     System.exit(1);
                 }
+
                 if (info.elementType() != val.type()) {
                     System.err.println("Type mismatch for variable " + id);
                     System.exit(1);
@@ -104,7 +123,11 @@ public class LLVMActions extends ProjektBaseListener {
                     VarType type = elements.isEmpty() ? VarType.INT : elements.get(0).type();
                     int size = elements.size();
                     
-                    variables.put(id, new VariableInfo(type, size, true));
+                    if (isInFunction) {
+                        locals.put(id, new VariableInfo(type, size, true));
+                    } else {
+                        variables.put(id, new VariableInfo(type, size, true));
+                    }
                     LLVMGenerator.declareArray(id, type, size);
                     
                     for (int i = 0; i < size; i++) {
@@ -123,8 +146,11 @@ public class LLVMActions extends ProjektBaseListener {
                     else if (typeName.equals("i8*")) type = VarType.STRING;
                     
                     int size = Integer.parseInt(parts[2]);
-                    
-                    variables.put(id, new VariableInfo(type, size, true));
+                    if (isInFunction) {
+                        locals.put(id, new VariableInfo(type, size, true));
+                    } else {
+                        variables.put(id, new VariableInfo(type, size, true));
+                    }
                     LLVMGenerator.declareArray(id, type, size);
                     
                     for (int i = 0; i < size; i++) {
@@ -132,7 +158,15 @@ public class LLVMActions extends ProjektBaseListener {
                        LLVMGenerator.storeArrayElement(id, new Value(VarType.INT, String.valueOf(i)), defVal, size);
                     }
                 } else {
-                    variables.put(id, new VariableInfo(val.type(), 1, false));
+                    if (isInFunction && !locals.containsKey(id)) {
+                        locals.put(id, new VariableInfo(val.type(), 1, false));
+                    } else if (!isInFunction && !variables.containsKey(id)) {
+                        variables.put(id, new VariableInfo(val.type(), 1, false));
+                    } else {
+                        System.err.println("Error: variable " + id + " already declared");
+                        System.exit(1);
+                    }
+                    // variables.put(id, new VariableInfo(val.type(), 1, false));
                     LLVMGenerator.declare(id, val.type());
                     LLVMGenerator.assign(id, val);
                 }
@@ -140,18 +174,21 @@ public class LLVMActions extends ProjektBaseListener {
         } else if (ctx.lvalue() instanceof ProjektParser.IndexLvalContext indexLval) {
             String id = indexLval.ID().getText();
             Value index = valuesStack.pop();
-            
-            if (!variables.containsKey(id)) {
-                System.err.println("Error: unknown array " + id);
+            VariableInfo info = getVariableInfo(id);
+
+            if (info == null) {
+                System.err.println("Error: variable " + id + " not found in current scope");
                 System.exit(1);
             }
-            VariableInfo info = variables.get(id);
             if (!info.isArray()) {
                 System.err.println("Error: " + id + " is not an array");
                 System.exit(1);
             }
             
             LLVMGenerator.storeArrayElement(id, index, val, info.size());
+        } else {
+            System.err.println("Error: invalid lvalue");
+            System.exit(1);
         }
     }
 
@@ -189,11 +226,11 @@ public class LLVMActions extends ProjektBaseListener {
         String id = ctx.ID().getText();
         Value index = valuesStack.pop();
 
-        if (!variables.containsKey(id)) {
+        VariableInfo info = getVariableInfo(id);
+        if (info == null) {
             System.err.println("Error: unknown array " + id);
             System.exit(1);
         }
-        VariableInfo info = variables.get(id);
         if (!info.isArray()) {
             System.err.println("Error: " + id + " is not an array");
             System.exit(1);
@@ -212,7 +249,7 @@ public class LLVMActions extends ProjektBaseListener {
         Value v = valuesStack.pop();
         if (v.kind() == ValueKind.ARRAY_VARIABLE) {
             String id = v.value();
-            VariableInfo info = variables.get(id);
+            VariableInfo info = getVariableInfo(id);
             LLVMGenerator.writeArray(v, info.size(), info.elementType());
         } else if (v.kind() == ValueKind.ARRAY_LITERAL) {
             String litId = v.value();
@@ -275,4 +312,65 @@ public class LLVMActions extends ProjektBaseListener {
         String name = LLVMGenerator.createString(str);
         valuesStack.push(new Value(VarType.STRING, name, ValueKind.REGISTER));
     }
+
+    @Override
+    public void enterFunctionDef(ProjektParser.FunctionDefContext ctx) {
+        String funcName = ctx.ID().getText();
+        VarType returnType = VarType.fromString(ctx.funType().getText());
+
+        locals = new HashMap<>();
+        functions.put(funcName, returnType);
+
+        List<String> names = new ArrayList<>();
+        List<VarType> types = new ArrayList<>();
+
+        if (ctx.paramList() != null && ctx.paramList().param() != null) {
+            for (ProjektParser.ParamContext p : ctx.paramList().param()) {
+                names.add(p.ID().getText());
+                types.add(VarType.fromString(p.type().getText()));
+                locals.put(p.ID().getText(), new VariableInfo(
+                    VarType.fromString(p.type().getText()),
+                    1,
+                    false,
+                    true
+                ));
+            }
+        }
+
+        LLVMGenerator.startFunction(funcName, returnType, names, types);
+    }
+
+    @Override
+    public void exitReturnStat(ProjektParser.ReturnStatContext ctx) {
+        Value retVal;
+
+        if (ctx.expr() != null) {
+            retVal = valuesStack.pop();
+        } else {
+            retVal = new Value(VarType.VOID, "", ValueKind.REGISTER);
+        }
+
+        LLVMGenerator.returnValue(retVal);
+    }
+
+    @Override
+    public void exitFunctionDef(ProjektParser.FunctionDefContext ctx) {
+        LLVMGenerator.endFunction();
+        locals.clear();
+    }
+
+    @Override
+    public void exitFunctionCall(ProjektParser.FunctionCallContext ctx) {
+        String funcName = ctx.ID().getText();
+        VarType funType = functions.get(funcName);
+        List<Value> args = new ArrayList<>();
+        if (ctx.argList() != null) {
+            for (ProjektParser.ExprContext exprCtx : ctx.argList().expr()) {
+                args.add(0, valuesStack.pop());
+            }
+        }
+        valuesStack.push(LLVMGenerator.call(funcName, args, funType));
+    }
+
+
 }

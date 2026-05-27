@@ -3,5 +3,6 @@ public enum ValueKind {
     VARIABLE,
     REGISTER,
     ARRAY_LITERAL,
-    ARRAY_VARIABLE
+    ARRAY_VARIABLE,
+    PARAMETER
 }

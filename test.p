@@ -51,3 +51,27 @@ write text256
 write ""
 text512 = "Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis, ultricies nec, pellentesque eu, pretium quis, sem. Nulla consequat massa quis enim. Donec pede justo, fringilla vel, aliquet nec, vulputate eget, arcu. In enim justo, rhoncus ut, imperdiet a, venenatis vitae, justo. Nullam dictum felis eu pede mollis pretium. Integer tincidunt. Cras dapibus. Vivamus e"
 write text512
+
+temp1 = 1000
+
+fun int complex(int a, int b) {
+    temp1 = a + b
+    temp2 = temp1 * 2
+    temp3 = temp2 - a
+
+    write temp1
+    write temp2
+
+    return temp3
+}
+
+fun void readWrite() {
+    write "siema"
+    return
+}
+
+write complex(5, 3)
+
+write temp1
+
+readWrite()

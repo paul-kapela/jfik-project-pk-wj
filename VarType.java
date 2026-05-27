@@ -2,7 +2,8 @@ public enum VarType {
     INT("i32"),
     REAL("float"),
     REALD("double"),
-    STRING("i8*");
+    STRING("i8*"),
+    VOID("void");
 
     public final String llvmName;
 
@@ -16,6 +17,7 @@ public enum VarType {
             case "real" -> REAL;
             case "double" -> REALD;
             case "string" -> STRING;
+            case "void" -> VOID;
             default -> throw new IllegalArgumentException("Unknown type: " + s);
         };
     }

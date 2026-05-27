@@ -1,31 +1,56 @@
+import java.util.List;
+
 class LLVMGenerator {
     static String main = "";
     static int tmp = 1;
     static String header = "";
     static int strId = 0;
+    static String functions = "";
+    static int funTmp = 0;
+    static boolean inFunction = false;
 
+    static void emit(String s) {
+        if (inFunction) {
+            functions += s + "\n";
+        } else {
+            main += s + "\n";
+        }
+    }
+
+    static int getTmp() {
+        return inFunction ? funTmp : tmp;
+    }
+
+    static int reg() {
+        return inFunction ? funTmp++ : tmp++;
+    }
+
+    static boolean isInFunction() {
+        return inFunction;
+    }
+    
     static void declare(String id, VarType type) {
         if (type == VarType.STRING) {
-            main += String.format("%%%s = alloca i8*\n", id);
+            emit(String.format("%%%s = alloca i8*\n", id));
         } else {
-            main += String.format("%%%s = alloca %s\n", id, type);
+            emit(String.format("%%%s = alloca %s\n", id, type));
         }
     }
 
     static void declareArray(String id, VarType type, int size) {
-        main += String.format("%%%s = alloca [%d x %s]\n", id, size, type);
+        emit(String.format("%%%s = alloca [%d x %s]\n", id, size, type));
     }
 
     static void checkBounds(Value index, int size) {
         String idxVal = loadIfNeeded(index);
-        String cmpLess = "%" + tmp++;
-        String cmpGreater = "%" + tmp++;
-        String result = "%" + tmp++;
+        String cmpLess = "%" + reg();
+        String cmpGreater = "%" + reg();
+        String result = "%" + reg();
 
-        main += String.format("%s = icmp slt i32 %s, 0\n", cmpLess, idxVal);
-        main += String.format("%s = icmp sge i32 %s, %d\n", cmpGreater, idxVal, size);
-        main += String.format("%s = or i1 %s, %s\n", result, cmpLess, cmpGreater);
-        main += String.format("br i1 %s, label @bounds_error, label %s\n", result, "continue_" + tmp);
+        emit(String.format("%s = icmp slt i32 %s, 0\n", cmpLess, idxVal));
+        emit(String.format("%s = icmp sge i32 %s, %d\n", cmpGreater, idxVal, size));
+        emit(String.format("%s = or i1 %s, %s\n", result, cmpLess, cmpGreater));
+        emit(String.format("br i1 %s, label @bounds_error, label %s\n", result, "continue_" + getTmp()));
 
         // This is a simplified representation. In a real compiler, we'd need to manage basic blocks.
         // Given the current linear output of LLVMGenerator, we will use a conditional jump
@@ -36,19 +61,19 @@ class LLVMGenerator {
 
     static Value loadArrayElement(String id, Value index, int size, VarType elementType) {
         String idxVal = loadIfNeeded(index);
-        String ptr = "%" + tmp++;
-        String result = "%" + tmp++;
+        String ptr = "%" + reg();
+        String result = "%" + reg();
 
         // Bounds check: if (idx <<  0 || idx >= size) { abort(); }
         // Since we have no basic blocks in the current Generator, we'll use a 'branch' pattern
         // or just assume the user understands we'll use a helper function.
         // For now, let's implement the GEP and Load.
 
-        main += String.format("%s = getelementptr inbounds [%d x %s], [%d x %s]* %%%s, i32 0, i32 %s\n",
-                ptr, size, elementType, size, elementType, id, idxVal);
+        emit(String.format("%s = getelementptr inbounds [%d x %s], [%d x %s]* %%%s, i32 0, i32 %s\n",
+                ptr, size, elementType, size, elementType, id, idxVal));
 
-        main += String.format("%s = load %s, %s* %s\n",
-                result, elementType, elementType, ptr);
+        emit(String.format("%s = load %s, %s* %s\n",
+                result, elementType, elementType, ptr));
 
         return new Value(elementType, result, ValueKind.REGISTER);
     }
@@ -56,13 +81,13 @@ class LLVMGenerator {
     static void storeArrayElement(String id, Value index, Value val, int size) {
         String idxVal = loadIfNeeded(index);
         String valStr = loadIfNeeded(val);
-        String ptr = "%" + tmp++;
+        String ptr = "%" + reg();
 
-        main += String.format("%s = getelementptr inbounds [%d x %s], [%d x %s]* %%%s, i32 0, i32 %s\n",
-                ptr, size, val.type(), size, val.type(), id, idxVal);
+        emit(String.format("%s = getelementptr inbounds [%d x %s], [%d x %s]* %%%s, i32 0, i32 %s\n",
+                ptr, size, val.type(), size, val.type(), id, idxVal));
 
-        main += String.format("store %s %s, %s* %s\n",
-                val.type(), valStr, val.type(), ptr);
+        emit(String.format("store %s %s, %s* %s\n",
+                val.type(), valStr, val.type(), ptr));
     }
 
     static void write(Value v) {
@@ -78,11 +103,11 @@ class LLVMGenerator {
         switch (v.type()) {
             case STRING -> {
                 if (v.kind() == ValueKind.VARIABLE) {
-                    String ptr = "%" + tmp++;
-                    main += String.format(
+                    String ptr = "%" + reg();
+                    emit(String.format(
                         "%s = load i8*, i8** %%%s\n",
                         ptr, v.value()
-                    );
+                    ));
                     value = ptr;
                 } else {
                     value = v.value();
@@ -100,11 +125,11 @@ class LLVMGenerator {
             case REAL -> {
                 String val = loadIfNeeded(v);
 
-                value = "%" + tmp++;
-                main += String.format(
+                value = "%" + reg();
+                emit(String.format(
                     "%s = fpext float %s to double\n",
                     value, val
-                );
+                ));
                 format = "@strp_float";
                 llvmType = "double";
                 fmLength = 7;
@@ -120,17 +145,17 @@ class LLVMGenerator {
             }
         }
 
-        main += String.format(
+        emit(String.format(
             "%%%d = call i32 (i8*, ...) @printf(" +
             "i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i32 0, i32 0), " +
             "%s %s)\n",
-            tmp++,
+            reg(),
             fmLength,
             fmLength,
             format,
             llvmType,
             value
-        );
+        ));
     }
 
     static void writeNoNewline(Value v) {
@@ -142,11 +167,11 @@ class LLVMGenerator {
         switch (v.type()) {
             case STRING -> {
                 if (v.kind() == ValueKind.VARIABLE) {
-                    String ptr = "%" + tmp++;
-                    main += String.format(
+                    String ptr = "%" + reg();
+                    emit(String.format(
                         "%s = load i8*, i8** %%%s\n",
                         ptr, v.value()
-                    );
+                    ));
                     value = ptr;
                 } else {
                     value = v.value();
@@ -163,11 +188,11 @@ class LLVMGenerator {
             }
             case REAL -> {
                 String val = loadIfNeeded(v);
-                value = "%" + tmp++;
-                main += String.format(
+                value = "%" + reg();
+                emit(String.format(
                     "%s = fpext float %s to double\n",
                     value, val
-                );
+                ));
                 format = "@strp_float_no_nl";
                 llvmType = "double";
                 fmLength = 6;
@@ -183,33 +208,33 @@ class LLVMGenerator {
             }
         }
 
-        main += String.format(
+        emit(String.format(
             "%%%d = call i32 (i8*, ...) @printf(" +
             "i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i32 0, i32 0), " +
             "%s %s)\n",
-            tmp++,
+            reg(),
             fmLength,
             fmLength,
             format,
             llvmType,
             value
-        );
+        ));
     }
 
     static void writeArray(Value v, int size, VarType type) {
-        main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_bracket_open, i32 0, i32 0), i8* null)\n", tmp++);
+        emit(String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_bracket_open, i32 0, i32 0), i8* null)\n", reg()));
 
         for (int i = 0; i < size; i++) {
             Value element = loadArrayElement(v.value(), new Value(VarType.INT, String.valueOf(i)), size, type);
             writeNoNewline(element);
 
             if (i < size - 1) {
-                main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_comma, i32 0, i32 0), i8* null)\n", tmp++);
+                emit(String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_comma, i32 0, i32 0), i8* null)\n", reg()));
             }
         }
 
-        main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_bracket_close, i32 0, i32 0), i8* null)\n", tmp++);
-        main += String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_nl, i32 0, i32 0), i8* null)\n", tmp++);
+        emit(String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_bracket_close, i32 0, i32 0), i8* null)\n", reg()));
+        emit(String.format("%%%d = call i32 (i8*, ...) @printf(i8* getelementptr inbounds ([2 x i8], [2 x i8]* @str_nl, i32 0, i32 0), i8* null)\n", reg()));
     }
 
     static void read(Value v) {
@@ -224,22 +249,22 @@ class LLVMGenerator {
 
         switch (v.type()) {
             case STRING -> {
-                int buf = tmp++;
-                main += String.format(
+                int buf = reg();
+                emit(String.format(
                     "%%%d = alloca [256 x i8]\n",
                     buf
-                );
+                ));
 
-                int ptr = tmp++;
-                main += String.format(
+                int ptr = reg();
+                emit(String.format(
                     "%%%d = getelementptr inbounds [256 x i8], [256 x i8]* %%%d, i32 0, i32 0\n",
                     ptr, buf
-                );
+                ));
 
-                main += String.format(
+                emit(String.format(
                     "store i8* %%%d, i8** %%%s\n",
                     ptr, v.value()
-                );
+                ));
 
                 arg = "%" + ptr;
                 format = "@strss";
@@ -273,17 +298,17 @@ class LLVMGenerator {
             }
         }
 
-        main += String.format(
+        emit(String.format(
             "%%%d = call i32 (i8*, ...) @__isoc99_scanf(" +
             "i8* getelementptr inbounds ([%d x i8], [%d x i8]* %s, i32 0, i32 0), " +
             "%s %s)\n",
-            tmp++,
+            reg(),
             fmtLen,
             fmtLen,
             format,
             llvmType,
             arg
-        );
+        ));
     }
 
     static String generate() {
@@ -308,10 +333,11 @@ class LLVMGenerator {
         text += "@strss = constant [6 x i8] c\"%255s\\00\"\n";
         // Arrays
         text += "@str_bracket_open = constant [2 x i8] c\"[\\00\"\n";
-        text += "@str_bracket_close = constant [2 x i8] c\"]\00\"\n";
+        text += "@str_bracket_close = constant [2 x i8] c\"]\\00\"\n";
         text += "@str_comma = constant [2 x i8] c\",\\00\"\n";
         text += "@str_nl = constant [2 x i8] c\"\\0A\\00\"\n";
         text += header;
+        text += functions;
         text += "define i32 @main() nounwind {\n";
         text += main;
         text += "ret i32 0 }\n";
@@ -336,16 +362,16 @@ class LLVMGenerator {
         }
 
         String val = loadIfNeeded(v);
-        String result = "%" + tmp++;
+        String result = "%" + reg();
 
         if (targetType == VarType.REAL && v.type() == VarType.INT) {
-            main += result + " = sitofp i32 " + val + " to float\n";
+            emit(result + " = sitofp i32 " + val + " to float\n");
             return new Value(VarType.REAL, result, ValueKind.REGISTER);
         } else if (targetType == VarType.REALD) {
             if (v.type() == VarType.INT) {
-                main += result + " = sitofp i32 " + val + " to double\n";
+                emit(result + " = sitofp i32 " + val + " to double\n");
             } else if (v.type() == VarType.REAL) {
-                main += result + " = fpext float " + val + " to double\n";
+                emit(result + " = fpext float " + val + " to double\n");
             } else {
                 return v;
             }
@@ -363,12 +389,12 @@ class LLVMGenerator {
         String aVal = loadIfNeeded(a);
         String bVal = loadIfNeeded(b);
 
-        String result = "%" + tmp++;
+        String result = "%" + reg();
 
         switch (type) {
-            case INT -> main += result + " = " + intOp + " i32 " + aVal + ", " + bVal + "\n";
-            case REAL -> main += result + " = " + realOp + " float " + aVal + ", " + bVal + "\n";
-            case REALD -> main += result + " = " + realdOp + " double " + aVal + ", " + bVal + "\n";
+            case INT -> emit(result + " = " + intOp + " i32 " + aVal + ", " + bVal + "\n");
+            case REAL -> emit(result + " = " + realOp + " float " + aVal + ", " + bVal + "\n");
+            case REALD -> emit(result + " = " + realdOp + " double " + aVal + ", " + bVal + "\n");
             default -> {
                 System.err.println("Unsupported type for arithmetic operation: " + type);
                 System.exit(1);
@@ -411,7 +437,7 @@ class LLVMGenerator {
         if (v.type() == VarType.STRING) {
             throw new RuntimeException("Operation not supported for string type");
         }
-        String result = "%" + tmp++;
+        String result = "%" + reg();
         String valStr = loadIfNeeded(v);
 
         String op = "sub";
@@ -421,9 +447,9 @@ class LLVMGenerator {
             zero = "0.0";
         }
 
-        main += String.format(
+        emit(String.format(
             "%s = %s %s %s, %s\n",
-            result, op, v.type(), zero, valStr);
+            result, op, v.type(), zero, valStr));
         return new Value(v.type(), result, ValueKind.REGISTER);
     }
 
@@ -432,33 +458,37 @@ class LLVMGenerator {
         String valueToStore = loadIfNeeded(v);
 
         if (v.type() == VarType.STRING) {
-            main += String.format(
+            emit(String.format(
                 "store i8* %s, i8** %%%s\n",
                 v.value(), id
-            );
+            ));
         } else {
-            main += String.format(
+            emit(String.format(
                 "store %s %s, %s* %%%s\n",
-                llvmType, valueToStore, llvmType, id);
+                llvmType, valueToStore, llvmType, id));
         }
     }
 
     private static String loadIfNeeded(Value v) {
+        if (v.kind() == ValueKind.PARAMETER) {
+            return "%" + v.value();
+        }
+
         if (v.type() == VarType.STRING) {
             if (v.kind() == ValueKind.VARIABLE) {
-                main += String.format(
+                emit(String.format(
                     "%%%d = load i8*, i8** %%%s\n",
-                    tmp, v.value()
-                );
-                return "%" + tmp++;
+                    getTmp(), v.value()
+                ));
+                return "%" + reg();
             }
             return v.value();
         } else if (v.kind() == ValueKind.VARIABLE) {
             String llvmType = v.type().toString();
-            main += String.format(
+            emit(String.format(
                 "%%%d = load %s, %s* %%%s\n",
-                tmp, llvmType, llvmType, v.value());
-            return "%" + tmp++;
+                getTmp(), llvmType, llvmType, v.value()));
+            return "%" + reg();
         }
         return v.value();
     }
@@ -475,5 +505,77 @@ class LLVMGenerator {
             text.length() + 1,
             name
         );
+    }
+
+    static void startFunction(
+            String name,
+            VarType returnType,
+            List<String> paramNames,
+            List<VarType> paramTypes
+    ) {
+        inFunction = true;
+        funTmp = 0;
+
+        StringBuilder sb = new StringBuilder();
+
+        sb.append(String.format("define %s @%s(", returnType, name));
+
+        for (int i = 0; i < paramTypes.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(String.format("%s %%%s", paramTypes.get(i), paramNames.get(i)));
+        }
+
+        sb.append(") {\n");
+        sb.append("entry:\n");
+
+        for (int i = 0; i < paramTypes.size(); i++) {
+            String paramName = paramNames.get(i);
+            VarType type = paramTypes.get(i);
+
+            sb.append(String.format("%%%s.addr = alloca %s\n", paramName, type));
+            sb.append(String.format(
+                    "store %s %%%s, %s* %%%s.addr\n",
+                    type, paramName, type, paramName
+            ));
+        }
+
+        functions += sb.toString();
+    }
+
+    static void endFunction() {
+        inFunction = false;
+        functions += "}\n";
+    }
+
+    static void returnValue(Value v) {
+        if (v.type() == VarType.VOID) {
+            functions += "ret void\n";
+            return;
+        }
+        
+        String val = loadIfNeeded(v);
+        functions += String.format("ret %s %s\n", v.type(), val);
+    }
+
+    static Value call(String funcName, List<Value> args, VarType returnType) {
+        StringBuilder argList = new StringBuilder();
+
+        for (int i = 0; i < args.size(); i++) {
+            if (i > 0) argList.append(", ");
+            argList.append(args.get(i).type())
+                    .append(" ")
+                    .append(loadIfNeeded(args.get(i)));
+        }
+
+        if (returnType == VarType.VOID) {
+            emit(String.format("call void @%s(%s)\n", funcName, argList));
+            return new Value(VarType.VOID, "", ValueKind.REGISTER);
+        }
+
+        String result = "%" + reg();
+        emit(String.format("%s = call %s @%s(%s)\n",
+            result, returnType, funcName, argList));
+
+        return new Value(returnType, result, ValueKind.REGISTER);
     }
 }
