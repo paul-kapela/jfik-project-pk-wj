@@ -12,6 +12,8 @@ public class LLVMActions extends ProjektBaseListener {
     HashMap<String, List<Value>> arrayLiterals = new HashMap<>();
     int literalId = 0;
 
+    String currentForVar;
+
     @Override
     public void exitCode(ProjektParser.CodeContext ctx) {
         System.out.println(LLVMGenerator.generate());
@@ -64,7 +66,44 @@ public class LLVMActions extends ProjektBaseListener {
             default -> "eq";
         };
 
-        LLVMGenerator.icmp(left, right, op);
+
+        Value result = LLVMGenerator.icmp(left, right, op);
+
+        if (ctx.getParent() instanceof ProjektParser.WhileContext) {
+            LLVMGenerator.whileCond(result);
+        }
+    }
+
+    @Override
+    public void enterWhile(ProjektParser.WhileContext ctx) {
+        LLVMGenerator.whileBegin();
+    }
+
+    @Override
+    public void exitWhile(ProjektParser.WhileContext ctx) {
+        LLVMGenerator.whileEnd();
+    }
+
+    @Override
+    public void exitForHeader(ProjektParser.ForHeaderContext ctx) {
+        String var = ctx.ID().getText();
+
+        Value end = valuesStack.pop();
+        Value start = valuesStack.pop();
+
+        variables.put(var, new VariableInfo(VarType.INT, 1, false));
+        LLVMGenerator.declare(var, VarType.INT);
+        LLVMGenerator.forBegin(var, start, end);
+
+        currentForVar = var;
+    }
+
+    @Override
+    public void exitFor(ProjektParser.ForContext ctx) {
+        LLVMGenerator.forInc(currentForVar);
+        LLVMGenerator.forEnd();
+
+        currentForVar = null;
     }
 
     @Override
@@ -147,6 +186,7 @@ public class LLVMActions extends ProjektBaseListener {
                     System.err.println("Type mismatch for variable " + id);
                     System.exit(1);
                 }
+                LLVMGenerator.assign(id, val);
             } else {
                 if (val.kind() == ValueKind.ARRAY_LITERAL) {
                     String litId = val.value();

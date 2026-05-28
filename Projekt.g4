@@ -10,6 +10,8 @@ stat: IF cond THEN blockIf
       elseIfClause*
       elseClause?
       ENDIF                      #if
+    | WHILE cond DO block ENDWHILE #while
+    | FOR forHeader DO block ENDFOR #for
     | READ expr                  #read
     | WRITE expr                 #write
     | lvalue EQUALS expr         #assign
@@ -76,6 +78,10 @@ condOp: EQ   #condEq
       | GT   #condGt
       ;
 
+forHeader
+    : ID EQUALS expr TO expr
+    ;
+
 READ: 'read';
 
 WRITE: 'write';
@@ -91,6 +97,18 @@ ELSEIF: 'elseif';
 ELSE: 'else';
 
 ENDIF: 'endif';
+
+WHILE: 'while';
+
+DO: 'do';
+
+ENDWHILE: 'endwhile';
+
+FOR: 'for';
+
+TO: 'to';
+
+ENDFOR: 'endfor';
 
 EQ: '==';
 

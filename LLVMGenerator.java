@@ -14,6 +14,7 @@ class LLVMGenerator {
     }
 
     static Stack<IfFrame> ifStack = new Stack<>();
+    static Stack<LoopFrame> loopStack = new Stack<>();
 
     static void ifBegin() {
         IfFrame frame = new IfFrame();
@@ -60,7 +61,7 @@ class LLVMGenerator {
         main += String.format("L%d:\n", frame.endLabel);
     }
 
-    static void icmp(Value left, Value right, String op) {
+    static Value icmp(Value left, Value right, String op) {
         if (left.type() == VarType.STRING && right.type() == VarType.STRING) {
             String leftVal = loadIfNeeded(left);
             String rightVal = loadIfNeeded(right);
@@ -75,9 +76,12 @@ class LLVMGenerator {
             String result = String.format("%%%d", tmp++);
 
             main += String.format("%s = icmp %s i32 %s, 0\n", result, op, cmpResult);
+            
+            return new Value(VarType.INT, result, ValueKind.REGISTER);
         } else if (left.type() == VarType.STRING || right.type() == VarType.STRING) {
             System.err.println("Error: cannot compare string with non-string type");
             System.exit(1);
+            return null;
         } else {
             VarType type = resolveType(left.type(), right.type());
             left = cast(left, type);
@@ -97,7 +101,101 @@ class LLVMGenerator {
                     main += String.format("%s = fcmp %s double %s, %s\n", result, floatOp(op), leftVal, rightVal);
                 default -> { System.err.println("Error: unsupported type for comparison"); System.exit(1); }
             }
+            return new Value(VarType.INT, result, ValueKind.REGISTER);
         }
+    }
+
+    static void whileBegin() {
+        LoopFrame frame = new LoopFrame();
+        frame.condLabel = br++;
+        frame.bodyLabel = br++;
+        frame.endLabel = br++;
+
+        loopStack.push(frame);
+
+        main += String.format("br label %%L%d\n", frame.condLabel);
+        main += String.format("L%d:\n", frame.condLabel);
+    }
+
+    static void whileCond(Value cond) {
+        LoopFrame frame = loopStack.peek();
+
+        String c = loadIfNeeded(cond);
+
+        main += String.format(
+            "br i1 %s, label %%L%d, label %%L%d\n",
+            c,
+            frame.bodyLabel,
+            frame.endLabel
+        );
+
+        main += String.format("L%d:\n", frame.bodyLabel);
+    }
+
+    static void whileEnd() {
+        LoopFrame frame = loopStack.pop();
+
+        main += String.format(
+            "br label %%L%d\n",
+            frame.condLabel
+        );
+
+        main += String.format("L%d:\n", frame.endLabel);
+    }
+
+    static void forBegin(String var, Value start, Value end) {
+        LoopFrame frame = new LoopFrame();
+        frame.condLabel = br++;
+        frame.bodyLabel = br++;
+        frame.endLabel = br++;
+        loopStack.push(frame);
+
+        main += String.format(
+            "store i32 %s, i32* %%%s\n",
+            loadIfNeeded(start), var
+        );
+
+        main += String.format("br label %%L%d\n", frame.condLabel);
+        main += String.format("L%d:\n", frame.condLabel);
+
+        String loaded = "%" + tmp++;
+        main += String.format(
+            "%s = load i32, i32* %%%s\n",
+            loaded, var
+        );
+
+        String cmp = "%" + tmp++;
+        main += String.format(
+            "%s = icmp sle i32 %s, %s\n",
+            cmp, loaded, loadIfNeeded(end)
+        );
+
+        main += String.format(
+            "br i1 %s, label %%L%d, label %%L%d\n",
+            cmp, frame.bodyLabel, frame.endLabel
+        );
+
+        main += String.format("L%d:\n", frame.bodyLabel);
+    }
+
+    static void forEnd() {
+        LoopFrame frame = loopStack.pop();
+
+        main += String.format("br label %%L%d\n", frame.condLabel);
+
+        main += String.format("L%d:\n", frame.endLabel);
+    }
+
+    static void forInc(String var) {
+        String tmpVar = "%" + tmp++;
+        String tmpVar2 = "%" + tmp++;
+
+        main += String.format(
+            "%s = load i32, i32* %%%s\n" +
+            "%s = add i32 %s, 1\n" +
+            "store i32 %s, i32* %%%s\n",
+            tmpVar, var, tmpVar2, tmpVar, tmpVar2, var
+        );
     }
 
     private static String floatOp(String intOp) {
