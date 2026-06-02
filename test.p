@@ -21,6 +21,8 @@ write "a * b"
 write a * b
 write "a / b"
 write a / b
+write "(10 + 5) * 3 / 5 - 2"
+write (10 + 5) * 3 / 5 - 2
 
 write "REAL"
 write 3.125f

@@ -4,6 +4,7 @@ b[0] = 10
 b[1] = 20
 write a[0]
 write b[1]
+write b[2]
 x = a[1] + b[0]
 write x
 write a

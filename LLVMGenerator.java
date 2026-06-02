@@ -1,9 +1,12 @@
 import java.util.List;
+import java.util.Stack;
 
 class LLVMGenerator {
-    static String main = "";
-    static int tmp = 1;
     static String header = "";
+    static String main = "";
+
+    static int tmp = 1;
+    static int br = 0;
     static int strId = 0;
     static String functions = "";
     static int funTmp = 0;
@@ -29,6 +32,205 @@ class LLVMGenerator {
         return inFunction;
     }
     
+    static class IfFrame {
+        int endLabel;
+        int nextFalseLabel = -1;
+    }
+
+    static Stack<IfFrame> ifStack = new Stack<>();
+    static Stack<LoopFrame> loopStack = new Stack<>();
+
+    static void ifBegin() {
+        IfFrame frame = new IfFrame();
+        frame.endLabel = br++;
+        ifStack.push(frame);
+    }
+
+    static void ifBranch() {
+        IfFrame frame = ifStack.peek();
+        int trueLabel = br++;
+        int falseLabel = br++;
+
+        frame.nextFalseLabel = falseLabel;
+
+        main += String.format(
+            "br i1 %%%d, label %%L%d, label %%L%d\n",
+            tmp - 1, trueLabel, falseLabel
+        );
+        main += String.format("L%d:\n", trueLabel);
+    }
+
+    static void elseIfNext() {
+        main += String.format("L%d:\n", ifStack.peek().nextFalseLabel);
+    }
+
+    static void elseBegin() {
+        IfFrame frame = ifStack.peek();
+        main += String.format("L%d:\n", frame.nextFalseLabel);
+        frame.nextFalseLabel = -1;
+    }
+
+    static void blockIfEnd() {
+        main += String.format("br label %%L%d\n", ifStack.peek().endLabel);
+    }
+
+    static void ifEnd(boolean hasElse) {
+        IfFrame frame = ifStack.pop();
+
+        if (!hasElse) {
+            main += String.format("L%d:\n", frame.nextFalseLabel);
+            main += String.format("br label %%L%d\n", frame.endLabel);
+        }
+
+        main += String.format("L%d:\n", frame.endLabel);
+    }
+
+    static Value icmp(Value left, Value right, String op) {
+        if (left.type() == VarType.STRING && right.type() == VarType.STRING) {
+            String leftVal = loadIfNeeded(left);
+            String rightVal = loadIfNeeded(right);
+
+            String cmpResult = String.format("%%%d", tmp++);
+
+            main += String.format(
+                "%s = call i32 @strcmp(i8* %s, i8* %s)\n",
+                cmpResult, leftVal, rightVal
+            );
+
+            String result = String.format("%%%d", tmp++);
+
+            main += String.format("%s = icmp %s i32 %s, 0\n", result, op, cmpResult);
+            
+            return new Value(VarType.INT, result, ValueKind.REGISTER);
+        } else if (left.type() == VarType.STRING || right.type() == VarType.STRING) {
+            System.err.println("Error: cannot compare string with non-string type");
+            System.exit(1);
+            return null;
+        } else {
+            VarType type = resolveType(left.type(), right.type());
+            left = cast(left, type);
+            right = cast(right, type);
+
+            String leftVal = loadIfNeeded(left);
+            String rightVal = loadIfNeeded(right);
+
+            String result = String.format("%%%d", tmp++);
+
+            switch (type) {
+                case INT ->
+                    main += String.format("%s = icmp %s i32 %s, %s\n", result, op, leftVal, rightVal);
+                case REAL ->
+                    main += String.format("%s = fcmp %s float %s, %s\n", result, floatOp(op), leftVal, rightVal);
+                case REALD ->
+                    main += String.format("%s = fcmp %s double %s, %s\n", result, floatOp(op), leftVal, rightVal);
+                default -> { System.err.println("Error: unsupported type for comparison"); System.exit(1); }
+            }
+            return new Value(VarType.INT, result, ValueKind.REGISTER);
+        }
+    }
+
+    static void whileBegin() {
+        LoopFrame frame = new LoopFrame();
+        frame.condLabel = br++;
+        frame.bodyLabel = br++;
+        frame.endLabel = br++;
+
+        loopStack.push(frame);
+
+        main += String.format("br label %%L%d\n", frame.condLabel);
+        main += String.format("L%d:\n", frame.condLabel);
+    }
+
+    static void whileCond(Value cond) {
+        LoopFrame frame = loopStack.peek();
+
+        String c = loadIfNeeded(cond);
+
+        main += String.format(
+            "br i1 %s, label %%L%d, label %%L%d\n",
+            c,
+            frame.bodyLabel,
+            frame.endLabel
+        );
+
+        main += String.format("L%d:\n", frame.bodyLabel);
+    }
+
+    static void whileEnd() {
+        LoopFrame frame = loopStack.pop();
+
+        main += String.format(
+            "br label %%L%d\n",
+            frame.condLabel
+        );
+
+        main += String.format("L%d:\n", frame.endLabel);
+    }
+
+    static void forBegin(String var, Value start, Value end) {
+        LoopFrame frame = new LoopFrame();
+        frame.condLabel = br++;
+        frame.bodyLabel = br++;
+        frame.endLabel = br++;
+        loopStack.push(frame);
+
+        main += String.format(
+            "store i32 %s, i32* %%%s\n",
+            loadIfNeeded(start), var
+        );
+
+        main += String.format("br label %%L%d\n", frame.condLabel);
+        main += String.format("L%d:\n", frame.condLabel);
+
+        String loaded = "%" + tmp++;
+        main += String.format(
+            "%s = load i32, i32* %%%s\n",
+            loaded, var
+        );
+
+        String cmp = "%" + tmp++;
+        main += String.format(
+            "%s = icmp sle i32 %s, %s\n",
+            cmp, loaded, loadIfNeeded(end)
+        );
+
+        main += String.format(
+            "br i1 %s, label %%L%d, label %%L%d\n",
+            cmp, frame.bodyLabel, frame.endLabel
+        );
+
+        main += String.format("L%d:\n", frame.bodyLabel);
+    }
+
+    static void forEnd() {
+        LoopFrame frame = loopStack.pop();
+
+        main += String.format("br label %%L%d\n", frame.condLabel);
+
+        main += String.format("L%d:\n", frame.endLabel);
+    }
+
+    static void forInc(String var) {
+        String tmpVar = "%" + tmp++;
+        String tmpVar2 = "%" + tmp++;
+
+        main += String.format(
+            "%s = load i32, i32* %%%s\n" +
+            "%s = add i32 %s, 1\n" +
+            "store i32 %s, i32* %%%s\n",
+            tmpVar, var, tmpVar2, tmpVar, tmpVar2, var
+        );
+    }
+
+    private static String floatOp(String intOp) {
+        return switch (intOp) {
+            case "eq" -> "oeq"; case "ne" -> "one";
+            case "slt" -> "olt"; case "sgt" -> "ogt";
+            case "sle" -> "ole"; case "sge" -> "oge";
+            default -> "oeq";
+        };
+    }
+
     static void declare(String id, VarType type) {
         if (type == VarType.STRING) {
             emit(String.format("%%%s = alloca i8*\n", id));
@@ -315,17 +517,18 @@ class LLVMGenerator {
         String text = "";
         text += "declare i32 @printf(i8*, ...)\n";
         text += "declare i32 @__isoc99_scanf(i8*, ...)\n";
+        text += "declare i32 @strcmp(i8*, i8*)\n";
         // INT
         text += "@strp = constant [4 x i8] c\"%d\\0A\\00\"\n";
         text += "@strs = constant [3 x i8] c\"%d\\00\"\n";
         text += "@strp_no_nl = constant [3 x i8] c\"%d\\00\"\n";
         // REAL
-        text += "@strp_float = constant [7 x i8] c\"%.7lf\\0A\\00\"\n";
+        text += "@strp_float = constant [7 x i8] c\"%.6lf\\0A\\00\"\n";
         text += "@strp_float_no_nl = constant [6 x i8] c\"%.7lf\\00\"\n";
         text += "@strs_float = constant [3 x i8] c\"%f\\00\"\n";
         // REALD
-        text += "@strp_double = constant [8 x i8] c\"%.15lf\\0A\\00\"\n";
-        text += "@strp_double_no_nl = constant [7 x i8] c\"%.15lf\\00\"\n";
+        text += "@strp_double = constant [8 x i8] c\"%.12lf\\0A\\00\"\n";
+        text += "@strp_double_no_nl = constant [7 x i8] c\"%.12lf\\00\"\n";
         text += "@strs_double = constant [4 x i8] c\"%lf\\00\"\n";
         // STRING
         text += "@strps = constant [4 x i8] c\"%s\\0A\\00\"\n";

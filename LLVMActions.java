@@ -9,10 +9,12 @@ public class LLVMActions extends ProjektBaseListener {
     HashMap<String, VariableInfo> variables = new HashMap<>();
     Map<String, VariableInfo> locals = new HashMap<>();
     Stack<Value> valuesStack = new Stack<>();
-    
+
     // To store elements of array literals temporarily
     HashMap<String, List<Value>> arrayLiterals = new HashMap<>();
     int literalId = 0;
+
+    String currentForVar;
 
     HashMap<String, VarType> functions = new HashMap<>();
 
@@ -30,6 +32,93 @@ public class LLVMActions extends ProjektBaseListener {
     @Override
     public void exitCode(ProjektParser.CodeContext ctx) {
         System.out.println(LLVMGenerator.generate());
+    }
+
+    @Override
+    public void enterIf(ProjektParser.IfContext ctx) {
+        LLVMGenerator.ifBegin();
+    }
+
+    @Override
+    public void exitIf(ProjektParser.IfContext ctx) {
+        LLVMGenerator.ifEnd(ctx.elseClause() != null);
+    }
+
+    @Override
+    public void enterBlockIf(ProjektParser.BlockIfContext ctx) {
+        if (!(ctx.getParent() instanceof ProjektParser.ElseClauseContext)) {
+            LLVMGenerator.ifBranch();
+        }
+    }
+
+    @Override
+    public void exitBlockIf(ProjektParser.BlockIfContext ctx) {
+        LLVMGenerator.blockIfEnd();
+    }
+
+    @Override
+    public void enterElseIfClause(ProjektParser.ElseIfClauseContext ctx) {
+        LLVMGenerator.elseIfNext();
+    }
+
+    @Override
+    public void enterElseClause(ProjektParser.ElseClauseContext ctx) {
+        LLVMGenerator.elseBegin();
+    }
+
+    @Override
+    public void exitCond(ProjektParser.CondContext ctx) {
+        Value right = valuesStack.pop();
+        Value left = valuesStack.pop();
+
+        String op = switch (ctx.condOp().getText()) {
+            case "==" -> "eq";
+            case "!=" -> "ne";
+            case "<" -> "slt";
+            case ">" -> "sgt";
+            case "<=" -> "sle";
+            case ">=" -> "sge";
+            default -> "eq";
+        };
+
+
+        Value result = LLVMGenerator.icmp(left, right, op);
+
+        if (ctx.getParent() instanceof ProjektParser.WhileContext) {
+            LLVMGenerator.whileCond(result);
+        }
+    }
+
+    @Override
+    public void enterWhile(ProjektParser.WhileContext ctx) {
+        LLVMGenerator.whileBegin();
+    }
+
+    @Override
+    public void exitWhile(ProjektParser.WhileContext ctx) {
+        LLVMGenerator.whileEnd();
+    }
+
+    @Override
+    public void exitForHeader(ProjektParser.ForHeaderContext ctx) {
+        String var = ctx.ID().getText();
+
+        Value end = valuesStack.pop();
+        Value start = valuesStack.pop();
+
+        variables.put(var, new VariableInfo(VarType.INT, 1, false));
+        LLVMGenerator.declare(var, VarType.INT);
+        LLVMGenerator.forBegin(var, start, end);
+
+        currentForVar = var;
+    }
+
+    @Override
+    public void exitFor(ProjektParser.ForContext ctx) {
+        LLVMGenerator.forInc(currentForVar);
+        LLVMGenerator.forEnd();
+
+        currentForVar = null;
     }
 
     @Override
@@ -116,6 +205,7 @@ public class LLVMActions extends ProjektBaseListener {
                     System.err.println("Type mismatch for variable " + id);
                     System.exit(1);
                 }
+                LLVMGenerator.assign(id, val);
             } else {
                 if (val.kind() == ValueKind.ARRAY_LITERAL) {
                     String litId = val.value();
@@ -129,7 +219,7 @@ public class LLVMActions extends ProjektBaseListener {
                         variables.put(id, new VariableInfo(type, size, true));
                     }
                     LLVMGenerator.declareArray(id, type, size);
-                    
+
                     for (int i = 0; i < size; i++) {
                         LLVMGenerator.storeArrayElement(id, new Value(VarType.INT, String.valueOf(i)), elements.get(i), size);
                     }
@@ -144,7 +234,7 @@ public class LLVMActions extends ProjektBaseListener {
                     else if (typeName.equals("float")) type = VarType.REAL;
                     else if (typeName.equals("double")) type = VarType.REALD;
                     else if (typeName.equals("i8*")) type = VarType.STRING;
-                    
+
                     int size = Integer.parseInt(parts[2]);
                     if (isInFunction) {
                         locals.put(id, new VariableInfo(type, size, true));
@@ -152,7 +242,7 @@ public class LLVMActions extends ProjektBaseListener {
                         variables.put(id, new VariableInfo(type, size, true));
                     }
                     LLVMGenerator.declareArray(id, type, size);
-                    
+
                     for (int i = 0; i < size; i++) {
                        Value defVal = new Value(type, "0");
                        LLVMGenerator.storeArrayElement(id, new Value(VarType.INT, String.valueOf(i)), defVal, size);
@@ -184,7 +274,7 @@ public class LLVMActions extends ProjektBaseListener {
                 System.err.println("Error: " + id + " is not an array");
                 System.exit(1);
             }
-            
+
             LLVMGenerator.storeArrayElement(id, index, val, info.size());
         } else {
             System.err.println("Error: invalid lvalue");
@@ -200,7 +290,7 @@ public class LLVMActions extends ProjektBaseListener {
             for (int i = 0; i < numExprs; i++) {
                 elements.add(0, valuesStack.pop());
             }
-            
+
             String lid = "LIT_" + (literalId++);
             arrayLiterals.put(lid, elements);
             VarType type = elements.isEmpty() ? VarType.INT : elements.get(0).type();
@@ -214,7 +304,7 @@ public class LLVMActions extends ProjektBaseListener {
             String typeStr = initCtx.type().getText();
             VarType type = VarType.fromString(typeStr);
             Value sizeValue = valuesStack.pop();
-            
+
             int sizeVal = Integer.parseInt(sizeValue.value());
             String initKey = "INIT_" + type + "_" + sizeVal;
             valuesStack.push(new Value(type, initKey, ValueKind.REGISTER));
@@ -256,8 +346,8 @@ public class LLVMActions extends ProjektBaseListener {
             List<Value> elements = arrayLiterals.get(litId);
             VarType type = elements.isEmpty() ? VarType.INT : elements.get(0).type();
             int size = elements.size();
-            
-            // To print a literal as an array, we need it to actually be in memory 
+
+            // To print a literal as an array, we need it to actually be in memory
             // because writeArray uses loadArrayElement.
             // We create a temporary hidden array for this.
             String tempId = "tmp_arr_" + literalId; // This needs a counter

@@ -1,13 +1,30 @@
 grammar Projekt;
 
-code: ( (stat|functionDef)? NEWLINE )* stat?
-;
-//    | block
+code: block
+    ;
 
-stat: READ expr          #read
-    | WRITE expr         #write
-    | lvalue EQUALS expr #assign
-    | value              #valueCall 
+block: ( (stat|functionDef)? NEWLINE )* stat?
+    ;
+
+stat: IF cond THEN blockIf
+      elseIfClause*
+      elseClause?
+      ENDIF                      #if
+    | WHILE cond DO block ENDWHILE #while
+    | FOR forHeader DO block ENDFOR #for
+    | READ expr                  #read
+    | WRITE expr                 #write
+    | lvalue EQUALS expr         #assign
+    | value                      #valueCall 
+    ;
+
+blockIf: block
+    ;
+
+elseIfClause: ELSEIF cond THEN blockIf
+    ;
+
+elseClause: ELSE blockIf
     ;
 
 lvalue: ID              #idLval
@@ -52,6 +69,21 @@ type: 'int' #tInt
     | 'string' #tString
     ;
 
+cond: expr condOp expr
+    ;
+
+condOp: EQ   #condEq
+      | NEQ  #condNeq
+      | LTE  #condLte
+      | GTE  #condGte
+      | LT   #condLt
+      | GT   #condGt
+      ;
+
+forHeader
+    : ID EQUALS expr TO expr
+    ;
+
 funType: VOID   #voidType
         | type  #typedReturn
         ;
@@ -69,10 +101,10 @@ paramList: param (COMMA param)*
 argList: expr (COMMA expr)*
     ;
 
-block: LBRACE NEWLINE (stat NEWLINE*)* returnStat NEWLINE RBRACE
+functionBlock: LBRACE NEWLINE (stat NEWLINE*)* returnStat NEWLINE RBRACE
     ;
 
-functionDef: FUN funType ID LPAREN paramList? RPAREN block
+functionDef: FUN funType ID LPAREN paramList? RPAREN functionBlock
     ;
 
 READ: 'read';
@@ -80,6 +112,30 @@ READ: 'read';
 WRITE: 'write';
 
 NEW: 'new';
+
+IF: 'if';
+
+THEN: 'then';
+
+ELSEIF: 'elseif';
+
+ELSE: 'else';
+
+ENDIF: 'endif';
+
+WHILE: 'while';
+
+DO: 'do';
+
+ENDWHILE: 'endwhile';
+
+FOR: 'for';
+
+TO: 'to';
+
+ENDFOR: 'endfor';
+
+EQ: '==';
 
 EQUALS: '=';
 
@@ -110,6 +166,16 @@ VOID: 'void';
 FUN: 'fun';
 
 RETURN: 'return';
+
+NEQ: '!=';
+
+LTE: '<=';
+
+GTE: '>=';
+
+LT: '<';
+
+GT: '>';
 
 ID: [a-zA-Z][a-zA-Z0-9]*;
 
