@@ -1,14 +1,21 @@
-struct Point
-    x int
-    y int
+struct Rectangle
+    x double
+    y double
+    width real
+    height real
 endstruct
 
-struct React
-    width int
-    height int
-endstruct
+r = Rectangle
+r.x = 10.05
+r.y = 30.20
+r.width = 52.40f
+r.height = 32.23f
 
-p = Point
-p.x = 10
-p.y = 30
-write p.x + p.y
+write "Pole"
+write r.width * r.height
+
+write "Koniec"
+write "X:"
+write r.x + r.width
+write "Y:"
+write r.y + r.height
