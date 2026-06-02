@@ -20,6 +20,10 @@ test-blocks: compile
 	java -cp $(ANTLR):output:. Main test_blocks.p > test_blocks.ll
 	lli test_blocks.ll
 
+test-struct: compile
+	java -cp $(ANTLR):output:. Main test_struct.p > test_struct.ll
+	lli test_struct.ll
+
 parsetree:
 	java -cp $(ANTLR):output:. org.antlr.v4.runtime.misc.TestRig Projekt -gui test.x
 

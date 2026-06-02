@@ -9,13 +9,17 @@ block: ( (stat|functionDef)? NEWLINE )* stat?
 stat: IF cond THEN blockIf
       elseIfClause*
       elseClause?
-      ENDIF                      #if
-    | WHILE cond DO block ENDWHILE #while
-    | FOR forHeader DO block ENDFOR #for
-    | READ expr                  #read
-    | WRITE expr                 #write
-    | lvalue EQUALS expr         #assign
-    | value                      #valueCall 
+      ENDIF                         #if
+    | WHILE cond DO block ENDWHILE  #whileLoop
+    | FOR forHeader DO block ENDFOR #forLoop
+    | READ expr                     #read
+    | WRITE expr                    #write
+    | lvalue EQUALS expr            #assign
+    | value                         #valueCall
+    | STRUCT ID NEWLINE field* ENDSTRUCT #structDeclaration
+    ;
+
+field: ID type NEWLINE
     ;
 
 blockIf: block
@@ -29,6 +33,7 @@ elseClause: ELSE blockIf
 
 lvalue: ID              #idLval
       | ID '[' expr ']' #indexLval
+      | ID DOT ID       #fieldLval
       ;
 
 primalExpr: primalExpr MULTIPLY unaryExpr #mul
@@ -54,6 +59,7 @@ value: ID                   #id
      | ID LBRAC expr RBRAC  #indexRval
      | arrayLiteral         #arrayLit
      | arrayInit            #arrayInitVal
+     | ID DOT ID            #fieldRval
      | ID LPAREN argList? RPAREN #functionCall
      ;
 
@@ -123,6 +129,10 @@ ELSE: 'else';
 
 ENDIF: 'endif';
 
+STRUCT: 'struct';
+
+ENDSTRUCT: 'endstruct';
+
 WHILE: 'while';
 
 DO: 'do';
@@ -134,6 +144,8 @@ FOR: 'for';
 TO: 'to';
 
 ENDFOR: 'endfor';
+
+DOT: '.';
 
 EQ: '==';
 

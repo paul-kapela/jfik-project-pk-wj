@@ -1,13 +1,15 @@
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Stack;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 public class LLVMActions extends ProjektBaseListener {
     HashMap<String, VariableInfo> variables = new HashMap<>();
+    HashMap<String, StructInfo> structs = new HashMap<>();
     Map<String, VariableInfo> locals = new HashMap<>();
+
     Stack<Value> valuesStack = new Stack<>();
 
     // To store elements of array literals temporarily
@@ -32,6 +34,115 @@ public class LLVMActions extends ProjektBaseListener {
     @Override
     public void exitCode(ProjektParser.CodeContext ctx) {
         System.out.println(LLVMGenerator.generate());
+    }
+
+    @Override
+    public void exitStructDeclaration(ProjektParser.StructDeclarationContext ctx) {
+        String structName = ctx.ID().getText();
+
+        if (structs.containsKey(structName)) {
+            System.err.printf(
+                "Error: struct '%s' is already defined\n",
+                structName
+            );
+            System.exit(1);
+        }
+
+        if (variables.containsKey(structName)) {
+            System.err.printf(
+                "Error: '%s' is already defined as a variable; cannot use it as a struct type name\n",
+                structName
+            );
+            System.exit(1);
+        }
+
+        LinkedHashMap<String, VarType> fields = new LinkedHashMap<>();
+        List<ProjektParser.FieldContext> fieldContexts = ctx.field();
+
+        for (ProjektParser.FieldContext fieldCtx : fieldContexts) {
+            String fieldName = fieldCtx.ID().getText();
+            VarType fieldType = VarType.fromString(
+                fieldCtx.type().getText()
+            );
+
+            if (fields.containsKey(fieldName)) {
+                System.err.printf(
+                   "Error: duplicate field '%s' in struct '%s'\n" ,
+                   fieldName, structName
+                );
+                System.exit(1);
+            }
+
+            fields.put(fieldName, fieldType);
+        }
+
+        StructInfo info = new StructInfo(structName, fields);
+        structs.put(structName, info);
+
+        LLVMGenerator.declareStruct(
+            structName,
+            new ArrayList<>(fields.values())
+        );
+    }
+
+    private void handleFieldAssign(String varName, String fieldName, Value val) {
+        VariableInfo varInfo = getVariableInfo(varName);
+
+        if (varInfo == null) {
+            System.err.printf(
+                "Error: unknown variable '%s'\n",
+                varName
+            );
+            System.exit(1);
+        }
+
+        if (!varInfo.isStruct()) {
+            System.err.printf(
+                "Error: '%s' is not a struct\n",
+                varName
+            );
+            System.exit(1);
+        }
+
+        StructInfo structInfo = structs.get(varInfo.structName());
+
+        if (structInfo == null) {
+            System.err.printf(
+                "Error: unknown struct type '%s'\n",
+                varInfo.structName()
+            );
+            System.exit(1);
+        }
+
+        int fieldIdx = structInfo.fieldIndex(fieldName);
+
+        if (fieldIdx < 0) {
+            System.err.printf("Error: struct '%s' has no field '%s'\n", varInfo.structName(), fieldName);
+            System.exit(1);
+        }
+
+        VarType fieldType = structInfo.fieldType(fieldName);
+
+        val = coerce(val, fieldType, varName + "." + fieldName);
+
+        LLVMGenerator.storeField(varName, varInfo.structName(), fieldIdx, val, fieldType);
+    }
+
+    private Value coerce(Value val, VarType target, String context) {
+        if (val.type() == target)
+            return val;
+
+        if (val.type() == VarType.INT && (target == VarType.REAL || target == VarType.REALD)) {
+            return LLVMGenerator.castValue(val, target);
+        }
+
+        System.err.printf(
+            "Error: type mismatch at '%s': expected %s, got %s\n",
+            context, target, val.type()
+        );
+        System.exit(1);
+
+        return null;
     }
 
     @Override
@@ -84,18 +195,18 @@ public class LLVMActions extends ProjektBaseListener {
 
         Value result = LLVMGenerator.icmp(left, right, op);
 
-        if (ctx.getParent() instanceof ProjektParser.WhileContext) {
+        if (ctx.getParent() instanceof ProjektParser.WhileLoopContext) {
             LLVMGenerator.whileCond(result);
         }
     }
 
     @Override
-    public void enterWhile(ProjektParser.WhileContext ctx) {
+    public void enterWhileLoop(ProjektParser.WhileLoopContext ctx) {
         LLVMGenerator.whileBegin();
     }
 
     @Override
-    public void exitWhile(ProjektParser.WhileContext ctx) {
+    public void exitWhileLoop(ProjektParser.WhileLoopContext ctx) {
         LLVMGenerator.whileEnd();
     }
 
@@ -114,7 +225,7 @@ public class LLVMActions extends ProjektBaseListener {
     }
 
     @Override
-    public void exitFor(ProjektParser.ForContext ctx) {
+    public void exitForLoop(ProjektParser.ForLoopContext ctx) {
         LLVMGenerator.forInc(currentForVar);
         LLVMGenerator.forEnd();
 
@@ -134,22 +245,15 @@ public class LLVMActions extends ProjektBaseListener {
         float value = Float.parseFloat(text);
 
         if (Float.isInfinite(value) || Float.isNaN(value)) {
-            System.err.println(String.format(
-                "Error line %d: invalid float literal '%s'",
-                ctx.getStart().getLine(),
-                text
-            ));
+            System.err.printf(
+                "Error line %d: invalid float literal '%s'\n",
+                ctx.getStart().getLine(), text
+            );
             System.exit(1);
         }
 
-        String llvmFloat = String.format(
-            Locale.US,
-            "%.15e",
-            (double)value
-        );
-
         valuesStack.push(
-            new Value(VarType.REAL, llvmFloat)
+            new Value(VarType.REAL, LLVMGenerator.llvmFloatConstant(value))
         );
     }
 
@@ -160,7 +264,7 @@ public class LLVMActions extends ProjektBaseListener {
         double value = Double.parseDouble(text);
 
         if (Double.isInfinite(value) || Double.isNaN(value)) {
-            System.err.println(String.format("Error line %d: invalid double literal '%s'", ctx.getStart().getLine(), text));
+            System.err.printf("Error line %d: invalid double literal '%s'\n", ctx.getStart().getLine(), text);
             System.exit(1);
         }
 
@@ -170,18 +274,26 @@ public class LLVMActions extends ProjektBaseListener {
     @Override
     public void exitId(ProjektParser.IdContext ctx) {
         String id = ctx.ID().getText();
+
+        if (structs.containsKey(id)) {
+            valuesStack.push(new Value(VarType.STRUCT, "STRUCT_" + id, ValueKind.REGISTER));
+            return;
+        }
+
         VariableInfo info = getVariableInfo(id);
 
         if (info != null) {
             if (info.isArray()) {
                 valuesStack.push(new Value(info.elementType(), id, ValueKind.ARRAY_VARIABLE));
+            } else if (info.isStruct()) {
+                valuesStack.push(new Value(VarType.STRUCT, id, ValueKind.VARIABLE));
             } else if (info.isParameter()) {
                 valuesStack.push(new Value(info.elementType(), id, ValueKind.PARAMETER));
             } else {
                 valuesStack.push(new Value(info.elementType(), id, ValueKind.VARIABLE));
             }
         } else {
-            System.err.println(String.format("Error: unknown variable %s", id));
+            System.err.printf("Error: unknown variable %s\n", id);
             System.exit(1);
         }
     }
@@ -190,12 +302,29 @@ public class LLVMActions extends ProjektBaseListener {
     public void exitAssign(ProjektParser.AssignContext ctx) {
         Value val = valuesStack.pop();
         boolean isInFunction = LLVMGenerator.isInFunction();
-        
+
+        if (ctx.lvalue() instanceof ProjektParser.FieldLvalContext fieldLval) {
+            String varName = fieldLval.ID(0).getText();
+            String fieldName = fieldLval.ID(1).getText();
+
+            handleFieldAssign(varName, fieldName, val);
+
+            return;
+        }
+
         if (ctx.lvalue() instanceof ProjektParser.IdLvalContext idLval) {
             String id = idLval.ID().getText();
             VariableInfo info = getVariableInfo(id);
 
             if (info != null) {
+                if (info.isStruct()) {
+                    System.err.printf(
+                        "Error: cannot reassign struct variable '%s' as a whole; use field assignments\n",
+                        id
+                    );
+                    System.exit(1);
+                }
+
                 if (info.isArray()) {
                     System.err.println("Error: cannot assign scalar to array variable " + id);
                     System.exit(1);
@@ -205,8 +334,17 @@ public class LLVMActions extends ProjektBaseListener {
                     System.err.println("Type mismatch for variable " + id);
                     System.exit(1);
                 }
+
                 LLVMGenerator.assign(id, val);
             } else {
+                if (structs.containsKey(id)) {
+                    System.err.printf(
+                        "Error: '%s' is already defined as a struct type; cannot use it as a variable name\n",
+                        id
+                    );
+                    System.exit(1);
+                }
+
                 if (val.kind() == ValueKind.ARRAY_LITERAL) {
                     String litId = val.value();
                     List<Value> elements = arrayLiterals.get(litId);
@@ -247,6 +385,20 @@ public class LLVMActions extends ProjektBaseListener {
                        Value defVal = new Value(type, "0");
                        LLVMGenerator.storeArrayElement(id, new Value(VarType.INT, String.valueOf(i)), defVal, size);
                     }
+                } else if (val.kind() == ValueKind.REGISTER && val.value().startsWith("STRUCT_")) {
+                    String structName = val.value().substring(7);
+
+                    if (!structs.containsKey(structName)) {
+                        System.err.printf(
+                            "Error: unknown struct type '%s'\n",
+                            structName
+                        );
+                        System.exit(1);
+                    }
+
+                    variables.put(id, new VariableInfo(structName, VarType.STRUCT, 1, false));
+
+                    LLVMGenerator.allocStruct(id, structName);
                 } else {
                     if (isInFunction && !locals.containsKey(id)) {
                         locals.put(id, new VariableInfo(val.type(), 1, false));
@@ -327,6 +479,42 @@ public class LLVMActions extends ProjektBaseListener {
         }
 
         valuesStack.push(LLVMGenerator.loadArrayElement(id, index, info.size(), info.elementType()));
+    }
+
+    @Override
+    public void exitFieldRval(ProjektParser.FieldRvalContext ctx) {
+        String varName = ctx.ID(0).getText();
+        String fieldName = ctx.ID(1).getText();
+
+        VariableInfo varInfo = getVariableInfo(varName);
+
+        if (varInfo == null) {
+            System.err.printf("Error: unknown variable '%s'\n", varName);
+            System.exit(1);
+        }
+
+        if (!varInfo.isStruct()) {
+            System.err.printf("Error: '%s' is not a struct\n", varName);
+            System.exit(1);
+        }
+
+        StructInfo structInfo = structs.get(varInfo.structName());
+
+        if (structInfo == null) {
+            System.err.printf("Error: unknown struct type '%s'\n", varInfo.structName());
+            System.exit(1);
+        }
+
+        int fieldIdx = structInfo.fieldIndex(fieldName);
+
+        if (fieldIdx < 0) {
+            System.err.printf("Error: struct '%s' has no field '%s'\n", varInfo.structName(), fieldName);
+            System.exit(1);
+        }
+
+        VarType fieldType = structInfo.fieldType(fieldName);
+
+        valuesStack.push(LLVMGenerator.loadField(varName, varInfo.structName(), fieldIdx, fieldType));
     }
 
     @Override

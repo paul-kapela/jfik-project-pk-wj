@@ -1,5 +1,6 @@
 import java.util.List;
 import java.util.Stack;
+import java.util.List;
 
 class LLVMGenerator {
     static String header = "";
@@ -39,6 +40,109 @@ class LLVMGenerator {
 
     static Stack<IfFrame> ifStack = new Stack<>();
     static Stack<LoopFrame> loopStack = new Stack<>();
+
+    static String formatFloatConstant(float value) {
+        int bits = Float.floatToRawIntBits(value);
+        int sign = (bits >>> 31) & 1;
+        int exp = (bits >>> 23) & 0xFF;
+        int frac = bits & 0x7FFFFF;
+
+        long dFrac = (long) frac << 29;
+        long dExp;
+        if (exp == 0) {
+            dExp = 0;
+        } else if (exp == 0xFF) {
+            dExp = 0x7FF;
+        } else {
+            dExp = (long) exp - 127 + 1023;
+        }
+
+        long dBits = ((long) sign << 63) | (dExp << 52) | dFrac;
+        return String.format("0x%016X", dBits);
+    }
+
+    static String llvmFloatConstant(float value) {
+        return formatFloatConstant(value);
+    }
+
+    static String llvmFloatConstant(String value) {
+        if (value.startsWith("0x") || value.startsWith("0X")) {
+            return value;
+        }
+        return formatFloatConstant(switch (value) {
+            case "0", "0.0" -> 0.0f;
+            default -> Float.parseFloat(value);
+        });
+    }
+
+    static boolean isZeroLiteral(Value v) {
+        if (v.kind() != ValueKind.LITERAL) {
+            return false;
+        }
+        return switch (v.type()) {
+            case INT -> "0".equals(v.value());
+            case REAL -> llvmFloatConstant(v.value()).equals(llvmFloatConstant(0.0f));
+            case REALD -> {
+                try {
+                    yield Double.parseDouble(v.value()) == 0.0;
+                } catch (NumberFormatException e) {
+                    yield "0".equals(v.value()) || "0.0".equals(v.value());
+                }
+            }
+            default -> false;
+        };
+    }
+
+    static void declareStruct(String name, List<VarType> fieldTypes) {
+        String fields = String.join(", ",
+            fieldTypes.stream()
+                .map(VarType::toString).toList()
+        );
+
+        header += String.format(
+            "%%struct.%s = type { %s }\n",
+            name, fields
+        );
+    }
+
+    static void allocStruct(String varName, String structName) {
+        main += String.format(
+            "%%%s = alloca %%struct.%s\n",
+            varName, structName
+        );
+    }
+
+    static Value loadField(String varName, String structName, int fieldIndex, VarType fieldType) {
+        String ptr = "%" + tmp++;
+        String result = "%" + tmp++;
+
+        main += String.format(
+            "%s = getelementptr inbounds %%struct.%s, %%struct.%s* %%%s, i32 0, i32 %d\n",
+            ptr, structName, structName, varName, fieldIndex
+        );
+
+        main += String.format(
+            "%s = load %s, %s* %s\n",
+            result, fieldType, fieldType, ptr
+        );
+
+        return new Value(fieldType, result, ValueKind.REGISTER);
+    }
+
+    static void storeField(String varName, String structName, int fieldIndex, Value val, VarType fieldType) {
+        String valString = loadIfNeeded(val);
+        String ptr = "%" + tmp++;
+
+        main += String.format(
+            "%s = getelementptr inbounds %%struct.%s, %%struct.%s* %%%s, i32 0, i32 %d\n",
+            ptr, structName, structName, varName, fieldIndex
+        );
+
+        main += String.format(
+            "store %s %s, %s* %s\n",
+            fieldType, valString, fieldType, ptr
+        );
+    }
 
     static void ifBegin() {
         IfFrame frame = new IfFrame();
@@ -100,7 +204,7 @@ class LLVMGenerator {
             String result = String.format("%%%d", tmp++);
 
             main += String.format("%s = icmp %s i32 %s, 0\n", result, op, cmpResult);
-            
+
             return new Value(VarType.INT, result, ValueKind.REGISTER);
         } else if (left.type() == VarType.STRING || right.type() == VarType.STRING) {
             System.err.println("Error: cannot compare string with non-string type");
@@ -583,6 +687,10 @@ class LLVMGenerator {
         return v;
     }
 
+    static Value castValue(Value v, VarType targetType) {
+        return cast(v, targetType);
+    }
+
     private static Value aritmeticOperation(Value a, Value b, String intOp, String realOp, String realdOp) {
         VarType type = resolveType(a.type(), b.type());
 
@@ -630,7 +738,7 @@ class LLVMGenerator {
 
     static Value div(Value a, Value b) {
         checkNumeric(a, b);
-        if ("0".equals(b.value()) || "0.0".equals(b.value())) {
+        if (isZeroLiteral(b)) {
             throw new RuntimeException("Operation not supported for division by zero");
         }
         return aritmeticOperation(a, b, "sdiv", "fdiv", "fdiv");
@@ -644,10 +752,13 @@ class LLVMGenerator {
         String valStr = loadIfNeeded(v);
 
         String op = "sub";
-        String zero = "0";
+        String zero = switch (v.type()) {
+            case REAL -> llvmFloatConstant(0.0f);
+            case REALD -> "0.0";
+            default -> "0";
+        };
         if (v.type() == VarType.REAL || v.type() == VarType.REALD) {
             op = "fsub";
-            zero = "0.0";
         }
 
         emit(String.format(
@@ -663,7 +774,7 @@ class LLVMGenerator {
         if (v.type() == VarType.STRING) {
             emit(String.format(
                 "store i8* %s, i8** %%%s\n",
-                v.value(), id
+                valueToStore, id
             ));
         } else {
             emit(String.format(
@@ -672,7 +783,7 @@ class LLVMGenerator {
         }
     }
 
-    private static String loadIfNeeded(Value v) {
+    static String loadIfNeeded(Value v) {
         if (v.kind() == ValueKind.PARAMETER) {
             return "%" + v.value();
         }
@@ -692,6 +803,8 @@ class LLVMGenerator {
                 "%%%d = load %s, %s* %%%s\n",
                 getTmp(), llvmType, llvmType, v.value()));
             return "%" + reg();
+        } else if (v.type() == VarType.REAL && v.kind() == ValueKind.LITERAL) {
+            return llvmFloatConstant(v.value());
         }
         return v.value();
     }
