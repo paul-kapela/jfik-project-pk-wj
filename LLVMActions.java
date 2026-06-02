@@ -3,8 +3,6 @@ import java.util.LinkedHashMap;
 import java.util.Stack;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
-
 public class LLVMActions extends ProjektBaseListener {
     HashMap<String, VariableInfo> variables = new HashMap<>();
     HashMap<String, StructInfo> structs = new HashMap<>();
@@ -238,14 +236,8 @@ public class LLVMActions extends ProjektBaseListener {
             System.exit(1);
         }
 
-        String llvmFloat = String.format(
-            Locale.US,
-            "%.15e",
-            (double)value
-        );
-
         valuesStack.push(
-            new Value(VarType.REAL, llvmFloat)
+            new Value(VarType.REAL, LLVMGenerator.llvmFloatConstant(value))
         );
     }
 

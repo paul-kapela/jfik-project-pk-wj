@@ -17,6 +17,58 @@ class LLVMGenerator {
     static Stack<IfFrame> ifStack = new Stack<>();
     static Stack<LoopFrame> loopStack = new Stack<>();
 
+    static String formatFloatConstant(float value) {
+        int bits = Float.floatToRawIntBits(value);
+        int sign = (bits >>> 31) & 1;
+        int exp = (bits >>> 23) & 0xFF;
+        int frac = bits & 0x7FFFFF;
+
+        long dFrac = (long) frac << 29;
+        long dExp;
+        if (exp == 0) {
+            dExp = 0;
+        } else if (exp == 0xFF) {
+            dExp = 0x7FF;
+        } else {
+            dExp = (long) exp - 127 + 1023;
+        }
+
+        long dBits = ((long) sign << 63) | (dExp << 52) | dFrac;
+        return String.format("0x%016X", dBits);
+    }
+
+    static String llvmFloatConstant(float value) {
+        return formatFloatConstant(value);
+    }
+
+    static String llvmFloatConstant(String value) {
+        if (value.startsWith("0x") || value.startsWith("0X")) {
+            return value;
+        }
+        return formatFloatConstant(switch (value) {
+            case "0", "0.0" -> 0.0f;
+            default -> Float.parseFloat(value);
+        });
+    }
+
+    static boolean isZeroLiteral(Value v) {
+        if (v.kind() != ValueKind.LITERAL) {
+            return false;
+        }
+        return switch (v.type()) {
+            case INT -> "0".equals(v.value());
+            case REAL -> llvmFloatConstant(v.value()).equals(llvmFloatConstant(0.0f));
+            case REALD -> {
+                try {
+                    yield Double.parseDouble(v.value()) == 0.0;
+                } catch (NumberFormatException e) {
+                    yield "0".equals(v.value()) || "0.0".equals(v.value());
+                }
+            }
+            default -> false;
+        };
+    }
+
     static void declareStruct(String name, List<VarType> fieldTypes) {
         String fields = String.join(", ",
             fieldTypes.stream()
@@ -661,7 +713,7 @@ class LLVMGenerator {
 
     static Value div(Value a, Value b) {
         checkNumeric(a, b);
-        if ("0".equals(b.value()) || "0.0".equals(b.value())) {
+        if (isZeroLiteral(b)) {
             throw new RuntimeException("Operation not supported for division by zero");
         }
         return aritmeticOperation(a, b, "sdiv", "fdiv", "fdiv");
@@ -675,10 +727,13 @@ class LLVMGenerator {
         String valStr = loadIfNeeded(v);
 
         String op = "sub";
-        String zero = "0";
+        String zero = switch (v.type()) {
+            case REAL -> llvmFloatConstant(0.0f);
+            case REALD -> "0.0";
+            default -> "0";
+        };
         if (v.type() == VarType.REAL || v.type() == VarType.REALD) {
             op = "fsub";
-            zero = "0.0";
         }
 
         main += String.format(
@@ -719,6 +774,8 @@ class LLVMGenerator {
                 "%%%d = load %s, %s* %%%s\n",
                 tmp, llvmType, llvmType, v.value());
             return "%" + tmp++;
+        } else if (v.type() == VarType.REAL && v.kind() == ValueKind.LITERAL) {
+            return llvmFloatConstant(v.value());
         }
         return v.value();
     }
