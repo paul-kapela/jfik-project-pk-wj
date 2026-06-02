@@ -2,7 +2,8 @@ public enum VarType {
     INT("i32"),
     REAL("float"),
     REALD("double"),
-    STRING("i8*");
+    STRING("i8*"),
+    STRUCT("struct");
 
     public final String llvmName;
 

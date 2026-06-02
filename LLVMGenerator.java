@@ -1,4 +1,5 @@
 import java.util.Stack;
+import java.util.List;
 
 class LLVMGenerator {
     static String header = "";
@@ -15,6 +16,57 @@ class LLVMGenerator {
 
     static Stack<IfFrame> ifStack = new Stack<>();
     static Stack<LoopFrame> loopStack = new Stack<>();
+
+    static void declareStruct(String name, List<VarType> fieldTypes) {
+        String fields = String.join(", ",
+            fieldTypes.stream()
+                .map(VarType::toString).toList()
+        );
+
+        header += String.format(
+            "%%struct.%s = type { %s }\n",
+            name, fields
+        );
+    }
+
+    static void allocStruct(String varName, String structName) {
+        main += String.format(
+            "%%%s = alloca %%struct.%s\n",
+            varName, structName
+        );
+    }
+
+    static Value loadField(String varName, String structName, int fieldIndex, VarType fieldType) {
+        String ptr = "%" + tmp++;
+        String result = "%" + tmp++;
+
+        main += String.format(
+            "%s = getelementptr inbounds %%struct.%s, %%struct.%s* %%%s, i32 0, i32 %d\n",
+            ptr, structName, structName, varName, fieldIndex
+        );
+
+        main += String.format(
+            "%s = load %s, %s* %s\n",
+            result, fieldType, fieldType, ptr
+        );
+
+        return new Value(fieldType, result, ValueKind.REGISTER);
+    }
+
+    static void storeField(String varName, String structName, int fieldIndex, Value val, VarType fieldType) {
+        String valString = loadIfNeeded(val);
+        String ptr = "%" + tmp++;
+
+        main += String.format(
+            "%s = getelementptr inbounds %%struct.%s, %%struct.%s* %%%s, i32 0, i32 %d\n",
+            ptr, structName, structName, varName, fieldIndex
+        );
+
+        main += String.format(
+            "store %s %s, %s* %s\n",
+            fieldType, valString, fieldType, ptr
+        );
+    }
 
     static void ifBegin() {
         IfFrame frame = new IfFrame();
@@ -76,7 +128,7 @@ class LLVMGenerator {
             String result = String.format("%%%d", tmp++);
 
             main += String.format("%s = icmp %s i32 %s, 0\n", result, op, cmpResult);
-            
+
             return new Value(VarType.INT, result, ValueKind.REGISTER);
         } else if (left.type() == VarType.STRING || right.type() == VarType.STRING) {
             System.err.println("Error: cannot compare string with non-string type");
@@ -558,6 +610,10 @@ class LLVMGenerator {
         return v;
     }
 
+    static Value castValue(Value v, VarType targetType) {
+        return cast(v, targetType);
+    }
+
     private static Value aritmeticOperation(Value a, Value b, String intOp, String realOp, String realdOp) {
         VarType type = resolveType(a.type(), b.type());
 
@@ -638,7 +694,7 @@ class LLVMGenerator {
         if (v.type() == VarType.STRING) {
             main += String.format(
                 "store i8* %s, i8** %%%s\n",
-                v.value(), id
+                valueToStore, id
             );
         } else {
             main += String.format(
@@ -647,7 +703,7 @@ class LLVMGenerator {
         }
     }
 
-    private static String loadIfNeeded(Value v) {
+    static String loadIfNeeded(Value v) {
         if (v.type() == VarType.STRING) {
             if (v.kind() == ValueKind.VARIABLE) {
                 main += String.format(

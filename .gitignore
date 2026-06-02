@@ -5,3 +5,4 @@ output/
 test.ll
 test_arrays.ll
 test_blocks.ll
+test_struct.ll
