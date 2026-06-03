@@ -12,6 +12,7 @@ class LLVMGenerator {
     static String functions = "";
     static int funTmp = 0;
     static boolean inFunction = false;
+    static VarType currentReturnType = null;
 
     static void emit(String s) {
         if (inFunction) {
@@ -142,6 +143,36 @@ class LLVMGenerator {
             "store %s %s, %s* %s\n",
             fieldType, valString, fieldType, ptr
         );
+    }
+
+    static Value loadFieldThis(String structName, int fieldIndex, VarType fieldType) {
+        String ptr = "%" + reg();
+        String result = "%" + reg();
+
+        emit(String.format(
+            "%s = getelementptr inbounds %%struct.%s, %%struct.%s* %%this, i32 0, i32 %d\n",
+            ptr, structName, structName, fieldIndex
+        ));
+        emit(String.format(
+            "%s = load %s, %s* %s\n",
+            result, fieldType, fieldType, ptr
+        ));
+
+        return new Value(fieldType, result, ValueKind.REGISTER);
+    }
+
+    static void storeFieldThis(String structName, int fieldIndex, Value val, VarType fieldType) {
+        String valString = loadIfNeeded(val);
+        String ptr = "%" + reg();
+
+        emit(String.format(
+            "%s = getelementptr inbounds %%struct.%s, %%struct.%s* %%this, i32 0, i32 %d\n",
+            ptr, structName, structName, fieldIndex
+        ));
+        emit(String.format(
+            "store %s %s, %s* %s\n",
+            fieldType, valString, fieldType, ptr
+        ));
     }
 
     static void ifBegin() {
@@ -823,6 +854,74 @@ class LLVMGenerator {
         );
     }
 
+    static void startMethod(
+            String structName,
+            String methodName,
+            VarType returnType,
+            List<String> paramNames,
+            List<VarType> paramTypes
+    ) {
+        inFunction = true;
+        funTmp = 0;
+        currentReturnType = returnType;
+
+        String llvmName = structName + "_" + methodName;
+        StringBuilder sb = new StringBuilder();
+
+        sb.append(String.format(
+            "define %s @%s(%%struct.%s* %%this",
+            returnType, llvmName, structName
+        ));
+
+        for (int i = 0; i < paramTypes.size(); i++) {
+            sb.append(String.format(", %s %%%s", paramTypes.get(i), paramNames.get(i)));
+        }
+
+        sb.append(") {\n");
+        sb.append("entry:\n");
+
+        for (int i = 0; i < paramTypes.size(); i++) {
+            String paramName = paramNames.get(i);
+            VarType type = paramTypes.get(i);
+
+            sb.append(String.format("%%%s.addr = alloca %s\n", paramName, type));
+            sb.append(String.format(
+                "store %s %%%s, %s* %%%s.addr\n",
+                type, paramName, type, paramName
+            ));
+        }
+
+        functions += sb.toString();
+    }
+
+    static Value callMethod(
+            String structName,
+            String methodName,
+            String receiverVar,
+            List<Value> args,
+            VarType returnType
+    ) {
+        String llvmFunc = structName + "_" + methodName;
+        StringBuilder argList = new StringBuilder();
+        argList.append(String.format("%%struct.%s* %%%s", structName, receiverVar));
+
+        for (Value arg : args) {
+            argList.append(String.format(", %s %s", arg.type(), loadIfNeeded(arg)));
+        }
+
+        if (returnType == VarType.VOID) {
+            main += String.format("call void @%s(%s)\n", llvmFunc, argList);
+            return new Value(VarType.VOID, "", ValueKind.REGISTER);
+        }
+
+        String result = "%" + tmp++;
+        main += String.format(
+            "%s = call %s @%s(%s)\n",
+            result, returnType, llvmFunc, argList
+        );
+        return new Value(returnType, result, ValueKind.REGISTER);
+    }
+
     static void startFunction(
             String name,
             VarType returnType,
@@ -831,6 +930,7 @@ class LLVMGenerator {
     ) {
         inFunction = true;
         funTmp = 0;
+        currentReturnType = returnType;
 
         StringBuilder sb = new StringBuilder();
 
@@ -860,6 +960,7 @@ class LLVMGenerator {
 
     static void endFunction() {
         inFunction = false;
+        currentReturnType = null;
         functions += "}\n";
     }
 
@@ -868,9 +969,14 @@ class LLVMGenerator {
             functions += "ret void\n";
             return;
         }
-        
-        String val = loadIfNeeded(v);
-        functions += String.format("ret %s %s\n", v.type(), val);
+
+        Value ret = v;
+        if (currentReturnType != null && ret.type() != currentReturnType) {
+            ret = cast(ret, currentReturnType);
+        }
+
+        String val = loadIfNeeded(ret);
+        functions += String.format("ret %s %s\n", ret.type(), val);
     }
 
     static Value call(String funcName, List<Value> args, VarType returnType) {

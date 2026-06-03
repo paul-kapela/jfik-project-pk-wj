@@ -1,6 +1,14 @@
 import java.util.LinkedHashMap;
 
-public record StructInfo(String name, LinkedHashMap<String, VarType> fields) {
+public record StructInfo(
+    String name,
+    LinkedHashMap<String, VarType> fields,
+    LinkedHashMap<String, MethodInfo> methods
+) {
+    public StructInfo(String name, LinkedHashMap<String, VarType> fields) {
+        this(name, fields, new LinkedHashMap<>());
+    }
+
     public String llvmName() {
         return String.format("%%struct.%s", name);
     }
@@ -24,8 +32,11 @@ public record StructInfo(String name, LinkedHashMap<String, VarType> fields) {
                     name, fieldName
                 )
             );
-        
+
         return t;
     }
 
+    public MethodInfo method(String methodName) {
+        return methods.get(methodName);
+    }
 }

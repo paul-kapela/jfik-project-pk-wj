@@ -16,10 +16,14 @@ stat: IF cond THEN blockIf
     | WRITE expr                    #write
     | lvalue EQUALS expr            #assign
     | value                         #valueCall
-    | STRUCT ID NEWLINE field* ENDSTRUCT #structDeclaration
+    | STRUCT ID NEWLINE field* NEWLINE* (structMethod NEWLINE*)* NEWLINE* ENDSTRUCT #structDeclaration
     ;
 
 field: ID type NEWLINE
+    ;
+
+structMethod
+    : FUN funType ID LPAREN paramList? RPAREN NEWLINE* functionBlock
     ;
 
 blockIf: block
@@ -34,6 +38,7 @@ elseClause: ELSE blockIf
 lvalue: ID              #idLval
       | ID '[' expr ']' #indexLval
       | ID DOT ID       #fieldLval
+      | THIS DOT ID     #thisFieldLval
       ;
 
 primalExpr: primalExpr MULTIPLY unaryExpr #mul
@@ -59,7 +64,9 @@ value: ID                   #id
      | ID LBRAC expr RBRAC  #indexRval
      | arrayLiteral         #arrayLit
      | arrayInit            #arrayInitVal
+     | THIS DOT ID          #thisFieldRval
      | ID DOT ID            #fieldRval
+     | ID DOT ID LPAREN argList? RPAREN #methodCall
      | ID LPAREN argList? RPAREN #functionCall
      ;
 
@@ -107,7 +114,7 @@ paramList: param (COMMA param)*
 argList: expr (COMMA expr)*
     ;
 
-functionBlock: LBRACE NEWLINE (stat NEWLINE*)* returnStat NEWLINE RBRACE
+functionBlock: NEWLINE* LBRACE NEWLINE (stat NEWLINE*)* returnStat NEWLINE* RBRACE
     ;
 
 functionDef: FUN funType ID LPAREN paramList? RPAREN functionBlock
@@ -176,6 +183,8 @@ RPAREN: ')';
 VOID: 'void';
 
 FUN: 'fun';
+
+THIS: 'this';
 
 RETURN: 'return';
 

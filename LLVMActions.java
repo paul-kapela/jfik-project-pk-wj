@@ -18,6 +18,10 @@ public class LLVMActions extends ProjektBaseListener {
 
     String currentForVar;
 
+    String currentStructName;
+    LinkedHashMap<String, VarType> currentStructFields;
+    LinkedHashMap<String, MethodInfo> currentStructMethods;
+
     HashMap<String, VarType> functions = new HashMap<>();
 
     private VariableInfo getVariableInfo(String id) {
@@ -37,7 +41,7 @@ public class LLVMActions extends ProjektBaseListener {
     }
 
     @Override
-    public void exitStructDeclaration(ProjektParser.StructDeclarationContext ctx) {
+    public void enterStructDeclaration(ProjektParser.StructDeclarationContext ctx) {
         String structName = ctx.ID().getText();
 
         if (structs.containsKey(structName)) {
@@ -56,33 +60,119 @@ public class LLVMActions extends ProjektBaseListener {
             System.exit(1);
         }
 
-        LinkedHashMap<String, VarType> fields = new LinkedHashMap<>();
-        List<ProjektParser.FieldContext> fieldContexts = ctx.field();
+        currentStructName = structName;
+        currentStructFields = new LinkedHashMap<>();
+        currentStructMethods = new LinkedHashMap<>();
+    }
 
-        for (ProjektParser.FieldContext fieldCtx : fieldContexts) {
-            String fieldName = fieldCtx.ID().getText();
-            VarType fieldType = VarType.fromString(
-                fieldCtx.type().getText()
+    @Override
+    public void exitField(ProjektParser.FieldContext ctx) {
+        String fieldName = ctx.ID().getText();
+        VarType fieldType = VarType.fromString(ctx.type().getText());
+
+        if (currentStructFields.containsKey(fieldName)) {
+            System.err.printf(
+                "Error: duplicate field '%s' in struct '%s'\n",
+                fieldName, currentStructName
             );
-
-            if (fields.containsKey(fieldName)) {
-                System.err.printf(
-                   "Error: duplicate field '%s' in struct '%s'\n" ,
-                   fieldName, structName
-                );
-                System.exit(1);
-            }
-
-            fields.put(fieldName, fieldType);
+            System.exit(1);
         }
 
-        StructInfo info = new StructInfo(structName, fields);
-        structs.put(structName, info);
+        currentStructFields.put(fieldName, fieldType);
+    }
+
+    @Override
+    public void exitStructDeclaration(ProjektParser.StructDeclarationContext ctx) {
+        StructInfo info = new StructInfo(
+            currentStructName,
+            currentStructFields,
+            currentStructMethods
+        );
+        structs.put(currentStructName, info);
 
         LLVMGenerator.declareStruct(
-            structName,
-            new ArrayList<>(fields.values())
+            currentStructName,
+            new ArrayList<>(currentStructFields.values())
         );
+
+        currentStructName = null;
+        currentStructFields = null;
+        currentStructMethods = null;
+    }
+
+    private VarType parseFunType(ProjektParser.FunTypeContext ctx) {
+        if (ctx instanceof ProjektParser.VoidTypeContext) {
+            return VarType.VOID;
+        }
+        return VarType.fromString(ctx.getText());
+    }
+
+    @Override
+    public void enterStructMethod(ProjektParser.StructMethodContext ctx) {
+        String methodName = ctx.ID().getText();
+        VarType returnType = parseFunType(ctx.funType());
+
+        if (currentStructMethods.containsKey(methodName)) {
+            System.err.printf(
+                "Error: duplicate method '%s' in struct '%s'\n",
+                methodName, currentStructName
+            );
+            System.exit(1);
+        }
+
+        List<String> names = new ArrayList<>();
+        List<VarType> types = new ArrayList<>();
+
+        if (ctx.paramList() != null) {
+            for (ProjektParser.ParamContext p : ctx.paramList().param()) {
+                names.add(p.ID().getText());
+                types.add(VarType.fromString(p.type().getText()));
+            }
+        }
+
+        currentStructMethods.put(methodName, new MethodInfo(returnType, names, types));
+
+        locals = new HashMap<>();
+        for (int i = 0; i < names.size(); i++) {
+            locals.put(names.get(i), new VariableInfo(types.get(i), 1, false, true));
+        }
+
+        LLVMGenerator.startMethod(currentStructName, methodName, returnType, names, types);
+    }
+
+    @Override
+    public void exitStructMethod(ProjektParser.StructMethodContext ctx) {
+        LLVMGenerator.endFunction();
+        locals.clear();
+    }
+
+    private StructInfo currentStructInfo() {
+        return new StructInfo(
+            currentStructName,
+            currentStructFields,
+            currentStructMethods
+        );
+    }
+
+    private void handleThisFieldAssign(String fieldName, Value val) {
+        if (currentStructName == null) {
+            System.err.println("Error: 'this' field assignment outside struct method");
+            System.exit(1);
+        }
+
+        StructInfo structInfo = currentStructInfo();
+        int fieldIdx = structInfo.fieldIndex(fieldName);
+        if (fieldIdx < 0) {
+            System.err.printf(
+                "Error: struct '%s' has no field '%s'\n",
+                currentStructName, fieldName
+            );
+            System.exit(1);
+        }
+
+        VarType fieldType = structInfo.fieldType(fieldName);
+        val = coerce(val, fieldType, "this." + fieldName);
+        LLVMGenerator.storeFieldThis(currentStructName, fieldIdx, val, fieldType);
     }
 
     private void handleFieldAssign(String varName, String fieldName, Value val) {
@@ -312,6 +402,11 @@ public class LLVMActions extends ProjektBaseListener {
             return;
         }
 
+        if (ctx.lvalue() instanceof ProjektParser.ThisFieldLvalContext thisFieldLval) {
+            handleThisFieldAssign(thisFieldLval.ID().getText(), val);
+            return;
+        }
+
         if (ctx.lvalue() instanceof ProjektParser.IdLvalContext idLval) {
             String id = idLval.ID().getText();
             VariableInfo info = getVariableInfo(id);
@@ -482,6 +577,31 @@ public class LLVMActions extends ProjektBaseListener {
     }
 
     @Override
+    public void exitThisFieldRval(ProjektParser.ThisFieldRvalContext ctx) {
+        if (currentStructName == null) {
+            System.err.println("Error: 'this' field access outside struct method");
+            System.exit(1);
+        }
+
+        String fieldName = ctx.ID().getText();
+        StructInfo structInfo = currentStructInfo();
+
+        int fieldIdx = structInfo.fieldIndex(fieldName);
+        if (fieldIdx < 0) {
+            System.err.printf(
+                "Error: struct '%s' has no field '%s'\n",
+                currentStructName, fieldName
+            );
+            System.exit(1);
+        }
+
+        VarType fieldType = structInfo.fieldType(fieldName);
+        valuesStack.push(
+            LLVMGenerator.loadFieldThis(currentStructName, fieldIdx, fieldType)
+        );
+    }
+
+    @Override
     public void exitFieldRval(ProjektParser.FieldRvalContext ctx) {
         String varName = ctx.ID(0).getText();
         String fieldName = ctx.ID(1).getText();
@@ -594,7 +714,7 @@ public class LLVMActions extends ProjektBaseListener {
     @Override
     public void enterFunctionDef(ProjektParser.FunctionDefContext ctx) {
         String funcName = ctx.ID().getText();
-        VarType returnType = VarType.fromString(ctx.funType().getText());
+        VarType returnType = parseFunType(ctx.funType());
 
         locals = new HashMap<>();
         functions.put(funcName, returnType);
@@ -641,13 +761,56 @@ public class LLVMActions extends ProjektBaseListener {
     public void exitFunctionCall(ProjektParser.FunctionCallContext ctx) {
         String funcName = ctx.ID().getText();
         VarType funType = functions.get(funcName);
+        if (funType == null) {
+            System.err.printf("Error: unknown function '%s'\n", funcName);
+            System.exit(1);
+        }
+        List<Value> args = collectCallArgs(ctx.argList());
+        valuesStack.push(LLVMGenerator.call(funcName, args, funType));
+    }
+
+    @Override
+    public void exitMethodCall(ProjektParser.MethodCallContext ctx) {
+        String receiverName = ctx.ID(0).getText();
+        String methodName = ctx.ID(1).getText();
+
+        VariableInfo receiver = getVariableInfo(receiverName);
+        if (receiver == null || !receiver.isStruct()) {
+            System.err.printf(
+                "Error: '%s' is not a struct variable\n",
+                receiverName
+            );
+            System.exit(1);
+        }
+
+        StructInfo structInfo = structs.get(receiver.structName());
+        MethodInfo method = structInfo.method(methodName);
+        if (method == null) {
+            System.err.printf(
+                "Error: struct '%s' has no method '%s'\n",
+                receiver.structName(), methodName
+            );
+            System.exit(1);
+        }
+
+        List<Value> args = collectCallArgs(ctx.argList());
+        valuesStack.push(LLVMGenerator.callMethod(
+            receiver.structName(),
+            methodName,
+            receiverName,
+            args,
+            method.returnType()
+        ));
+    }
+
+    private List<Value> collectCallArgs(ProjektParser.ArgListContext argList) {
         List<Value> args = new ArrayList<>();
-        if (ctx.argList() != null) {
-            for (ProjektParser.ExprContext exprCtx : ctx.argList().expr()) {
+        if (argList != null) {
+            for (ProjektParser.ExprContext exprCtx : argList.expr()) {
                 args.add(0, valuesStack.pop());
             }
         }
-        valuesStack.push(LLVMGenerator.call(funcName, args, funType));
+        return args;
     }
 
 
