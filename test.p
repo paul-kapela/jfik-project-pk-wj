@@ -74,6 +74,8 @@ fun void readWrite() {
 
 write complex(5, 3)
 
+write temp2
+
 write temp1
 
 readWrite()

@@ -22,4 +22,6 @@ for j = 2 to 6 do
     write j
 endfor
 
+write j
+
 write 777
